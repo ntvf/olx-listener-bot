@@ -2,6 +2,9 @@ package io.chatbots.olx;
 
 import io.chatbots.olx.grabber.Offer;
 import io.chatbots.olx.grabber.OlxGrabber;
+import io.chatbots.olx.stats.BotStats;
+import io.chatbots.olx.stats.BotStatsService;
+import io.chatbots.olx.stats.UserLocaleStats;
 import io.chatbots.olx.storage.ListenerStorage;
 import io.chatbots.olx.storage.entity.Listener;
 import lombok.SneakyThrows;
@@ -46,6 +49,9 @@ public class OlxTelegramBot extends TelegramLongPollingBot {
     private ListenerStorage listenerStorage;
 
     @Autowired
+    private BotStatsService botStatsService;
+
+    @Autowired
     private OlxGrabber olxGrabber;
 
     private ExecutorService executors = Executors.newWorkStealingPool(10);
@@ -80,6 +86,7 @@ public class OlxTelegramBot extends TelegramLongPollingBot {
         handlers.add(execute(this::listListeners, update, true));
         handlers.add(execute(this::removeListener, update, true));
         handlers.add(execute(this::addListener, update, true));
+        handlers.add(execute(this::stat, update, true));
         handlers.add(execute(this::unknownCommand, update, true));
 
         return handlers;
@@ -87,6 +94,32 @@ public class OlxTelegramBot extends TelegramLongPollingBot {
 
     private HandleResult unknownCommand(Update update) {
         return HandleResult.EMPTY;
+    }
+
+    private HandleResult stat(Update update) {
+        if ("/stats".equals(update.getMessage().getText())) {
+            val botStats = botStatsService.getBotStats();
+
+            return HandleResult.builder().botApiMethod(
+                    new SendMessage()
+                            .enableMarkdown(true)
+                            .setChatId(update.getMessage().getChatId())
+                            .setText("all listeners: " + botStats.getAllListenersCount() + "\r\n" +
+                                    "active listeners: " + botStats.getActiveListenersCount() + "\r\n" +
+                                    "all users: " + botStats.getAllUsersCount() + "\r\n" +
+                                    "active users: " + botStats.getActiveUsersCount() + "\r\n" +
+                                    "users by language" + "\r\n" +
+                                    "all: " + formatLocales(botStats.getAllUsersLocales()) + "\r\n" +
+                                    "active: " + formatLocales(botStats.getActiveUsersLocales()))
+            ).build();
+        }
+        return HandleResult.EMPTY;
+    }
+
+    private String formatLocales(UserLocaleStats localeStats) {
+        return localeStats.getLocalesCount().entrySet()
+                .stream().map(it -> it.getKey() + ":" + it.getValue())
+                .collect(Collectors.joining(","));
     }
 
     private HandleResult addListener(Update update) {
@@ -111,6 +144,7 @@ public class OlxTelegramBot extends TelegramLongPollingBot {
                     .userLanguageCode(user.getLanguageCode())
                     .updated(new Date())
                     .url(url)
+                    .active(true)
                     .build();
             listenerStorage.saveListener(newListener);
             return HandleResult.builder().botApiMethod(
@@ -181,14 +215,7 @@ public class OlxTelegramBot extends TelegramLongPollingBot {
         try {
             StringWriter stringWriter = new StringWriter();
             exception.printStackTrace(new PrintWriter(stringWriter));
-            Message message = update.getMessage();
-            if (message == null) {
-                message = update.getCallbackQuery().getMessage();
-            }
             log.error("There was an error, update:{}", update, exception);
-//            execute(new SendMessage()
-//                    .setChatId(message.getChatId())
-//                    .setText("Sorry there was an error during processing:" + stringWriter));
         } catch (Exception e) {
             log.warn("Exception while sending stacktrace to chat:", e);
         }

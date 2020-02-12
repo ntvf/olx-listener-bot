@@ -24,5 +24,6 @@ public class Listener {
     private String url;
     private Set<String> lastOffersHashes;
     private Date updated;
+    private boolean active;
 
 }
