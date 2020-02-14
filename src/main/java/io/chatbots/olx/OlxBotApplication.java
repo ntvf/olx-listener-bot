@@ -76,7 +76,7 @@ public class OlxBotApplication implements InitializingBean {
                 put("olx.ro", new Widespread());
                 put("olx.pt", new Widespread());
                 put("dubizzle.com", new Widespread());
-                put("olx.com.eg", new Widespread());
+                put("olx.com.eg", new QA());
                 put("olx.qa", new QA());
                 put("olx.com.br", new BR());
                 put("olx.uz", new Widespread());
