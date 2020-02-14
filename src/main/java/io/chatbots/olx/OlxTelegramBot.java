@@ -2,7 +2,7 @@ package io.chatbots.olx;
 
 import io.chatbots.olx.grabber.Offer;
 import io.chatbots.olx.grabber.OlxGrabber;
-import io.chatbots.olx.stats.BotStats;
+import io.chatbots.olx.i18n.TranslationService;
 import io.chatbots.olx.stats.BotStatsService;
 import io.chatbots.olx.stats.UserLocaleStats;
 import io.chatbots.olx.storage.ListenerStorage;
@@ -18,7 +18,6 @@ import org.telegram.telegrambots.bots.TelegramLongPollingBot;
 import org.telegram.telegrambots.meta.api.methods.BotApiMethod;
 import org.telegram.telegrambots.meta.api.methods.send.SendDocument;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
-import org.telegram.telegrambots.meta.api.objects.Message;
 import org.telegram.telegrambots.meta.api.objects.Update;
 import org.telegram.telegrambots.meta.api.objects.User;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.ReplyKeyboardMarkup;
@@ -32,6 +31,8 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
 import java.util.List;
+import java.util.Locale;
+import java.util.Optional;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.function.BooleanSupplier;
@@ -43,7 +44,6 @@ public class OlxTelegramBot extends TelegramLongPollingBot {
 
     private static final String REMOVE_PREFIX = "/r_";
     private static final String LISTENERS_COMMAND = "/listeners";
-    private static final String ACTIVE_LISTENERS_LINK = LISTENERS_COMMAND + " - активные подписки\r\n\r\n";
 
     @Autowired
     private ListenerStorage listenerStorage;
@@ -53,6 +53,9 @@ public class OlxTelegramBot extends TelegramLongPollingBot {
 
     @Autowired
     private OlxGrabber olxGrabber;
+
+    @Autowired
+    private TranslationService translationService;
 
     private ExecutorService executors = Executors.newWorkStealingPool(10);
 
@@ -102,7 +105,6 @@ public class OlxTelegramBot extends TelegramLongPollingBot {
 
             return HandleResult.builder().botApiMethod(
                     new SendMessage()
-                            .enableMarkdown(true)
                             .setChatId(update.getMessage().getChatId())
                             .setText("all listeners: " + botStats.getAllListenersCount() + "\r\n" +
                                     "active listeners: " + botStats.getActiveListenersCount() + "\r\n" +
@@ -128,9 +130,8 @@ public class OlxTelegramBot extends TelegramLongPollingBot {
             if (!new UrlValidator().isValid(url)) {
                 return HandleResult.builder().botApiMethod(
                         new SendMessage()
-                                .enableMarkdown(true)
                                 .setChatId(update.getMessage().getChatId())
-                                .setText("❌ Не валидный url")
+                                .setText(translationService.translate("listeners.not.valid.url", getLocale(update)))
 
                 ).build();
             }
@@ -149,10 +150,8 @@ public class OlxTelegramBot extends TelegramLongPollingBot {
             listenerStorage.saveListener(newListener);
             return HandleResult.builder().botApiMethod(
                     new SendMessage()
-                            .enableMarkdown(true)
                             .setChatId(update.getMessage().getChatId())
-                            .setText("✅ Ваш запрос сохранен")
-
+                            .setText(translationService.translate("listeners.created", getLocale(update)))
             ).build();
         }
         return HandleResult.EMPTY;
@@ -166,7 +165,7 @@ public class OlxTelegramBot extends TelegramLongPollingBot {
                     new SendMessage()
                             .enableMarkdown(true)
                             .setChatId(update.getMessage().getChatId())
-                            .setText("✅ Ваш запрос удален")
+                            .setText(translationService.translate("listeners.removed", getLocale(update)))
 
             ).build();
         }
@@ -184,25 +183,30 @@ public class OlxTelegramBot extends TelegramLongPollingBot {
         if (listeners.isEmpty()) {
             resultBuilder.botApiMethod(
                     new SendMessage()
-                            .enableMarkdown(true)
                             .setChatId(update.getMessage().getChatId())
-                            .setText("У вас нет запросов на наблюдение:\r\n\r\n" +
+                            .setText(translationService.translate("listeners.empty", getLocale(update)) + "\r\n\r\n" +
                                     "/start")
             );
         } else {
             listeners
                     .forEach(listener -> resultBuilder.botApiMethod(
                             new SendMessage()
-                                    .enableMarkdown(false)
                                     .setChatId(update.getMessage().getChatId())
                                     .setText("URL:" +
                                             listener.getUrl() + "\r\n" +
-                                            "Удалить: " + REMOVE_PREFIX + listener.getId())
+                                            translationService.translate("listeners.remove", getLocale(update)) + " " + REMOVE_PREFIX + listener.getId())
                             )
 
                     );
         }
         return resultBuilder.build();
+    }
+
+    private Locale getLocale(Update update) {
+        return Optional.ofNullable(update.getMessage().getFrom())
+                .map(User::getLanguageCode)
+                .map(Locale::forLanguageTag)
+                .orElse(Locale.US);
     }
 
     private void walkThrough(List<BooleanSupplier> handlers) {
@@ -258,15 +262,7 @@ public class OlxTelegramBot extends TelegramLongPollingBot {
                             .enableMarkdown(true)
                             .setChatId(update.getMessage().getChatId())
                             .setReplyMarkup(replyKeyboardMarkup)
-                            .setText("⭐⭐⭐⭐⭐\r\n" +
-                                    "Привет! Я мониторю olx.ua на новые обьявления. Для мониторинга пошлите мне ссылку поиска olx c настроенными фильтрами \r\n\r\n" +
-                                    "*Команды:*\r\n" +
-                                    ACTIVE_LISTENERS_LINK +
-                                    "*Инструкция:*\r\n" +
-                                    "https://www.youtube.com/watch?v=cHwrh4QE4wE\r\n\r\n" +
-                                    "Обратная связь и 🍎 - ntvf9999@gmail.com" +
-                                    "\r\n⭐⭐⭐⭐⭐")
-
+                            .setText(translationService.translate("bot.start", getLocale(update)))
             ).build();
         }
         return HandleResult.EMPTY;
@@ -318,7 +314,6 @@ public class OlxTelegramBot extends TelegramLongPollingBot {
                 + offer.getUrl() + "\r\n";
         builder.botApiMethod(
                 new SendMessage()
-                        .enableMarkdown(false)
                         .setChatId(listener.getChatId())
                         .setText(text)
         );

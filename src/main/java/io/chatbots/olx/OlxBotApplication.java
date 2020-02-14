@@ -9,11 +9,14 @@ import io.chatbots.olx.grabber.parser.Future;
 import io.chatbots.olx.grabber.parser.Parser;
 import io.chatbots.olx.grabber.parser.QA;
 import io.chatbots.olx.grabber.parser.Widespread;
+import io.chatbots.olx.i18n.ResourceBundleTranslationService;
+import io.chatbots.olx.i18n.TranslationService;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.cache.annotation.EnableCaching;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
@@ -28,6 +31,7 @@ import java.util.Map;
 @SpringBootApplication
 @EnableScheduling
 @Configuration
+@EnableCaching
 @Import(StorageConfig.class)
 public class OlxBotApplication implements InitializingBean {
 
@@ -85,6 +89,11 @@ public class OlxBotApplication implements InitializingBean {
                 put("olx.co.cr", new Future());
             }
         };
+    }
+
+    @Bean
+    TranslationService translationService() {
+        return new ResourceBundleTranslationService();
     }
 
 
