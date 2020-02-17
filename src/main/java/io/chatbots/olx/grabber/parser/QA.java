@@ -12,7 +12,7 @@ import java.util.Optional;
 import java.util.stream.Collectors;
 
 @Slf4j
-public class QA implements Parser {
+public class QA extends BaseParser implements Parser {
     @Override
     public List<Offer> parse(String url) {
         try {
@@ -36,7 +36,7 @@ public class QA implements Parser {
                                 String content = "";
                                 String name = element.text();
                                 return Offer.builder()
-                                        .url(link)
+                                        .url(cleanUrlFromQueryParams(link))
                                         .content(content)
                                         .name(name)
                                         .build();

@@ -4,6 +4,8 @@ import io.chatbots.olx.grabber.Offer;
 import lombok.extern.slf4j.Slf4j;
 import lombok.val;
 import org.jsoup.Jsoup;
+import org.jsoup.helper.StringUtil;
+import org.jsoup.nodes.Element;
 
 import java.util.Collections;
 import java.util.List;
@@ -11,7 +13,7 @@ import java.util.Optional;
 import java.util.stream.Collectors;
 
 @Slf4j
-public class Widespread implements Parser {
+public class Widespread extends BaseParser implements Parser {
     @Override
     public List<Offer> parse(String url) {
         try {
@@ -30,15 +32,14 @@ public class Widespread implements Parser {
                     .select(".thumb")
                     .stream()
                     .map(it -> {
-                                String link = it.attr("href");
+                                String link = extractLink(it);
                                 String content = "";
                                 String name;
-                                name = it.select("img").attr("alt");
-                                it.parent().parent()
+                                name = it.parent().parent()
                                         .select("strong")
                                         .text();
                                 return Offer.builder()
-                                        .url(link)
+                                        .url(cleanUrlFromQueryParams(link))
                                         .content(content)
                                         .name(name)
                                         .build();
@@ -48,5 +49,17 @@ public class Widespread implements Parser {
             log.warn("Error while parsing url:" + url, e);
             return Collections.emptyList();
         }
+    }
+
+    private String extractLink(Element it) {
+        String link = getHref(it);
+        if (StringUtil.isBlank(link)) {
+            link = it.select("a").attr("href");
+        }
+        return link;
+    }
+
+    private String getHref(Element it) {
+        return it.attr("href");
     }
 }

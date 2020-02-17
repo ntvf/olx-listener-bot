@@ -1,5 +1,6 @@
 package io.chatbots.olx;
 
+import io.chatbots.olx.checker.RegressionChecker;
 import io.chatbots.olx.config.StorageConfig;
 import io.chatbots.olx.grabber.OlxGrabber;
 import io.chatbots.olx.grabber.OlxGrabberImpl;
@@ -38,6 +39,9 @@ public class OlxBotApplication implements InitializingBean {
 
     @Autowired
     private OlxTelegramBot olxTelegramBot;
+
+    @Autowired
+    private RegressionChecker regressionChecker;
 
     public static void main(String[] args) {
         ApiContextInitializer.init();
@@ -92,13 +96,23 @@ public class OlxBotApplication implements InitializingBean {
     }
 
     @Bean
-    TranslationService translationService() {
+    public TranslationService translationService() {
         return new ResourceBundleTranslationService();
+    }
+
+    @Bean
+    public RegressionChecker checker(OlxGrabber grabber) {
+        return new RegressionChecker(grabber);
     }
 
 
     @Scheduled(fixedRate = 10 * 60 * 1_000)
     public void scheduleSending() {
         olxTelegramBot.notifySubscribedChats();
+    }
+
+    @Scheduled(fixedRate = 4 * 60 * 60 * 1_000)
+    public void scheduleChecker() {
+        regressionChecker.checkSitesForRegression();
     }
 }

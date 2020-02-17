@@ -12,7 +12,7 @@ import java.util.Optional;
 import java.util.stream.Collectors;
 
 @Slf4j
-public class Future implements Parser {
+public class Future extends BaseParser implements Parser {
     @Override
     public List<Offer> parse(String url) {
         try {
@@ -41,7 +41,7 @@ public class Future implements Parser {
                                 .map(Element::text)
                                 .orElse(null);
                         return Offer.builder()
-                                .url(urlStart + link)
+                                .url(cleanUrlFromQueryParams(urlStart + link))
                                 .content(content)
                                 .name(name)
                                 .build();
