@@ -147,12 +147,7 @@ public class OlxTelegramBot extends TelegramLongPollingBot {
             ).build();
         }
 
-        return HandleResult.builder().botApiMethod(
-                new SendMessage()
-                        .setChatId(update.getMessage().getChatId())
-                        .setText(translationService.translate("listeners.not.valid.url", getLocale(update)))
-
-        ).build();
+        return HandleResult.EMPTY;
     }
 
     private HandleResult removeListener(Update update) {
