@@ -12,7 +12,6 @@ import lombok.extern.slf4j.Slf4j;
 import lombok.val;
 import org.apache.commons.codec.digest.DigestUtils;
 import org.apache.commons.lang3.StringUtils;
-import org.apache.commons.validator.routines.UrlValidator;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.telegram.telegrambots.bots.TelegramLongPollingBot;
 import org.telegram.telegrambots.meta.api.methods.BotApiMethod;
@@ -89,7 +88,7 @@ public class OlxTelegramBot extends TelegramLongPollingBot {
         handlers.add(execute(this::listListeners, update, true));
         handlers.add(execute(this::removeListener, update, true));
         handlers.add(execute(this::addListener, update, true));
-        handlers.add(execute(this::stat, update, true));
+        handlers.add(execute(this::stats, update, true));
         handlers.add(execute(this::unknownCommand, update, true));
 
         return handlers;
@@ -99,7 +98,7 @@ public class OlxTelegramBot extends TelegramLongPollingBot {
         return HandleResult.EMPTY;
     }
 
-    private HandleResult stat(Update update) {
+    private HandleResult stats(Update update) {
         if ("/stats".equals(update.getMessage().getText())) {
             val botStats = botStatsService.getBotStats();
 
@@ -124,17 +123,10 @@ public class OlxTelegramBot extends TelegramLongPollingBot {
                 .collect(Collectors.joining(","));
     }
 
+    @SneakyThrows
     private HandleResult addListener(Update update) {
         String url = update.getMessage().getText();
         if (StringUtils.containsIgnoreCase(url, "http")) {
-            if (!new UrlValidator().isValid(url)) {
-                return HandleResult.builder().botApiMethod(
-                        new SendMessage()
-                                .setChatId(update.getMessage().getChatId())
-                                .setText(translationService.translate("listeners.not.valid.url", getLocale(update)))
-
-                ).build();
-            }
             User user = update.getMessage().getFrom();
             val newListener = Listener.builder()
                     .userId(user.getId())
@@ -154,7 +146,13 @@ public class OlxTelegramBot extends TelegramLongPollingBot {
                             .setText(translationService.translate("listeners.created", getLocale(update)))
             ).build();
         }
-        return HandleResult.EMPTY;
+
+        return HandleResult.builder().botApiMethod(
+                new SendMessage()
+                        .setChatId(update.getMessage().getChatId())
+                        .setText(translationService.translate("listeners.not.valid.url", getLocale(update)))
+
+        ).build();
     }
 
     private HandleResult removeListener(Update update) {
