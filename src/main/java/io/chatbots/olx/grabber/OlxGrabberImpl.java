@@ -15,7 +15,7 @@ import java.util.Map;
 public class OlxGrabberImpl implements OlxGrabber {
 
     @Autowired
-    private Map<String, Parser> parsers;
+    private final Map<String, Parser> parsers;
 
     public OlxGrabberImpl(Map<String, Parser> parsers) {
         this.parsers = parsers;

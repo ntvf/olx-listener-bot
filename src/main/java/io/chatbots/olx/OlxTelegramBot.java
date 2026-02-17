@@ -17,6 +17,7 @@ import org.telegram.telegrambots.bots.TelegramLongPollingBot;
 import org.telegram.telegrambots.meta.api.methods.BotApiMethod;
 import org.telegram.telegrambots.meta.api.methods.send.SendDocument;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
+import org.telegram.telegrambots.meta.api.objects.MessageEntity;
 import org.telegram.telegrambots.meta.api.objects.Update;
 import org.telegram.telegrambots.meta.api.objects.User;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.ReplyKeyboardMarkup;
@@ -41,25 +42,20 @@ import java.util.stream.Collectors;
 @Slf4j
 public class OlxTelegramBot extends TelegramLongPollingBot {
 
+    public static final String MARKDOWN_PARCE_MODE = "Markdown";
     private static final String REMOVE_PREFIX = "/r_";
     private static final String LISTENERS_COMMAND = "/listeners";
-
+    private final String botName;
+    private final String botToken;
+    private final ExecutorService executors = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() * 4);
     @Autowired
     private ListenerStorage listenerStorage;
-
     @Autowired
     private BotStatsService botStatsService;
-
     @Autowired
     private OlxGrabber olxGrabber;
-
     @Autowired
     private TranslationService translationService;
-
-    private ExecutorService executors = Executors.newWorkStealingPool(10);
-
-    private String botName;
-    private String botToken;
 
     public OlxTelegramBot(String botName, String botToken) {
         this.botName = botName;
@@ -74,8 +70,15 @@ public class OlxTelegramBot extends TelegramLongPollingBot {
     @Override
     public void onUpdateReceived(Update update) {
         try {
-            List<BooleanSupplier> handlers = registerHandlers(update);
-            walkThrough(handlers);
+
+            if ("private".equals(update.getMessage().getChat().getType())
+                    || Optional.ofNullable(update.getMessage().getEntities())
+                    .orElse(Collections.emptyList())
+                    .stream()
+                    .anyMatch(it -> "mention".equals(it.getType()))) {
+                List<BooleanSupplier> handlers = registerHandlers(update);
+                walkThrough(handlers);
+            }
         } catch (Exception e) {
             log.warn("Exception while answering to request update:{}", update, e);
             sendStacktraceToChat(update, e);
@@ -98,20 +101,34 @@ public class OlxTelegramBot extends TelegramLongPollingBot {
         return HandleResult.EMPTY;
     }
 
+    private String getText(Update update) {
+        val initial = update.getMessage().getText();
+        return Optional.ofNullable(update.getMessage().getEntities())
+                .orElse(Collections.emptyList())
+                .stream()
+                .filter(it -> "mention".equals(it.getType()))
+                .findFirst()
+                .map(MessageEntity::getText)
+                .map(it -> StringUtils.strip(initial.replace(it, "")))
+                .orElse(initial);
+
+    }
     private HandleResult stats(Update update) {
-        if ("/stats".equals(update.getMessage().getText())) {
+        if ("/stats".equals(getText(update))) {
             val botStats = botStatsService.getBotStats();
 
+
             return HandleResult.builder().botApiMethod(
-                    new SendMessage()
-                            .setChatId(update.getMessage().getChatId())
-                            .setText("all listeners: " + botStats.getAllListenersCount() + "\r\n" +
+                    SendMessage.builder()
+                            .chatId(update.getMessage().getChatId())
+                            .text("all listeners: " + botStats.getAllListenersCount() + "\r\n" +
                                     "active listeners: " + botStats.getActiveListenersCount() + "\r\n" +
                                     "all users: " + botStats.getAllUsersCount() + "\r\n" +
                                     "active users: " + botStats.getActiveUsersCount() + "\r\n" +
                                     "users by language" + "\r\n" +
                                     "all: " + formatLocales(botStats.getAllUsersLocales()) + "\r\n" +
                                     "active: " + formatLocales(botStats.getActiveUsersLocales()))
+                            .build()
             ).build();
         }
         return HandleResult.EMPTY;
@@ -125,7 +142,7 @@ public class OlxTelegramBot extends TelegramLongPollingBot {
 
     @SneakyThrows
     private HandleResult addListener(Update update) {
-        String url = update.getMessage().getText();
+        String url = getText(update);
         if (StringUtils.containsIgnoreCase(url, "http")) {
             User user = update.getMessage().getFrom();
             val newListener = Listener.builder()
@@ -141,9 +158,10 @@ public class OlxTelegramBot extends TelegramLongPollingBot {
                     .build();
             listenerStorage.saveListener(newListener);
             return HandleResult.builder().botApiMethod(
-                    new SendMessage()
-                            .setChatId(update.getMessage().getChatId())
-                            .setText(translationService.translate("listeners.created", getLocale(update)))
+                    SendMessage.builder()
+                            .chatId(update.getMessage().getChatId())
+                            .text(translationService.translate("listeners.created", getLocale(update)))
+                            .build()
             ).build();
         }
 
@@ -151,14 +169,15 @@ public class OlxTelegramBot extends TelegramLongPollingBot {
     }
 
     private HandleResult removeListener(Update update) {
-        if (update.getMessage().getText().startsWith(REMOVE_PREFIX)) {
-            String id = update.getMessage().getText().split(REMOVE_PREFIX)[1];
+        if (getText(update).startsWith(REMOVE_PREFIX)) {
+            String id = getText(update).split(REMOVE_PREFIX)[1];
             listenerStorage.deleteListener(id, update.getMessage().getChatId());
             return HandleResult.builder().botApiMethod(
-                    new SendMessage()
-                            .enableMarkdown(true)
-                            .setChatId(update.getMessage().getChatId())
-                            .setText(translationService.translate("listeners.removed", getLocale(update)))
+                    SendMessage.builder()
+                            .parseMode(MARKDOWN_PARCE_MODE)
+                            .chatId(update.getMessage().getChatId())
+                            .text(translationService.translate("listeners.removed", getLocale(update)))
+                            .build()
 
             ).build();
         }
@@ -166,7 +185,7 @@ public class OlxTelegramBot extends TelegramLongPollingBot {
     }
 
     private HandleResult listListeners(Update update) {
-        if (!LISTENERS_COMMAND.equals(update.getMessage().getText())) {
+        if (!LISTENERS_COMMAND.equals(getText(update))) {
             return HandleResult.EMPTY;
         }
         HandleResult.HandleResultBuilder resultBuilder = HandleResult.builder();
@@ -175,19 +194,21 @@ public class OlxTelegramBot extends TelegramLongPollingBot {
         List<Listener> listeners = listenerStorage.getChatListeners(update.getMessage().getChatId());
         if (listeners.isEmpty()) {
             resultBuilder.botApiMethod(
-                    new SendMessage()
-                            .setChatId(update.getMessage().getChatId())
-                            .setText(translationService.translate("listeners.empty", getLocale(update)) + "\r\n\r\n" +
+                    SendMessage.builder()
+                            .chatId(update.getMessage().getChatId())
+                            .text(translationService.translate("listeners.empty", getLocale(update)) + "\r\n\r\n" +
                                     "/start")
+                            .build()
             );
         } else {
             listeners
                     .forEach(listener -> resultBuilder.botApiMethod(
-                            new SendMessage()
-                                    .setChatId(update.getMessage().getChatId())
-                                    .setText("URL:" +
+                            SendMessage.builder()
+                                    .chatId(update.getMessage().getChatId())
+                                    .text("URL:" +
                                             listener.getUrl() + "\r\n" +
                                             translationService.translate("listeners.remove", getLocale(update)) + " " + REMOVE_PREFIX + listener.getId())
+                                    .build()
                             )
 
                     );
@@ -239,7 +260,7 @@ public class OlxTelegramBot extends TelegramLongPollingBot {
     }
 
     private HandleResult start(Update update) {
-        if ("/start".equals(update.getMessage().getText())) {
+        if ("/start".equals(getText(update))) {
             ReplyKeyboardMarkup replyKeyboardMarkup = new ReplyKeyboardMarkup();
             replyKeyboardMarkup.setSelective(true);
             replyKeyboardMarkup.setResizeKeyboard(true);
@@ -251,11 +272,12 @@ public class OlxTelegramBot extends TelegramLongPollingBot {
             keyboard.add(keyboardFirstRow);
             replyKeyboardMarkup.setKeyboard(keyboard);
             return HandleResult.builder().botApiMethod(
-                    new SendMessage()
-                            .enableMarkdown(true)
-                            .setChatId(update.getMessage().getChatId())
-                            .setReplyMarkup(replyKeyboardMarkup)
-                            .setText(translationService.translate("bot.start", getLocale(update)))
+                    SendMessage.builder()
+                            .parseMode(MARKDOWN_PARCE_MODE)
+                            .chatId(update.getMessage().getChatId())
+                            .replyMarkup(replyKeyboardMarkup)
+                            .text(translationService.translate("bot.start", getLocale(update)))
+                            .build()
             ).build();
         }
         return HandleResult.EMPTY;
@@ -271,7 +293,7 @@ public class OlxTelegramBot extends TelegramLongPollingBot {
         return botToken;
     }
 
-    void notifySubscribedChats() {
+    public void notifySubscribedChats() {
         listenerStorage.getAllListeners().forEach(listener -> {
                     executors.submit(() -> processListener(listener));
                 }
@@ -306,9 +328,10 @@ public class OlxTelegramBot extends TelegramLongPollingBot {
         String text = offer.getName() + "\r\n"
                 + offer.getUrl() + "\r\n";
         builder.botApiMethod(
-                new SendMessage()
-                        .setChatId(listener.getChatId())
-                        .setText(text)
+                SendMessage.builder()
+                        .chatId(listener.getChatId())
+                        .text(text)
+                        .build()
         );
         log.info("Going to send message:{} to chat:{}", text, listener.getChatId());
         processResults(builder.build());

@@ -32,11 +32,10 @@ public class RegressionChecker {
                 "https://www.olx.in/items/q-iphone",
                 "https://www.olx.co.za/items/q-iphone",
                 "https://www.olx.com.pk/items/q-iphone",
-                "https://www.olx.co.id/items/q-iphone",
                 "https://www.olx.com.ar/items/q-iphone",
                 "https://www.olx.co.cr/items/q-iphone");
 
-        urlsForCheck.stream().forEach(url -> {
+        urlsForCheck.forEach(url -> {
             olxGrabber.getOffers(url).forEach(offer -> {
                 if (StringUtils.isBlank(offer.getUrl())) {
                     log.warn("!!! URL IS NOT PARSING WELL:{}", url);

@@ -3,8 +3,8 @@ package io.chatbots.olx.grabber.parser;
 import io.chatbots.olx.grabber.Offer;
 import lombok.extern.slf4j.Slf4j;
 import lombok.val;
+import org.apache.commons.lang3.StringUtils;
 import org.jsoup.Jsoup;
-import org.jsoup.helper.StringUtil;
 import org.jsoup.nodes.Element;
 
 import java.util.Collections;
@@ -23,12 +23,12 @@ public class Widespread extends BaseParser implements Parser {
             } else {
                 url = url + "?";
             }
-            url = url + "sf=1";
+            url = url + "?search%5Border%5D=created_at:desc&view=list";
 
             val body = Jsoup.connect(url).get().body();
 
             return Optional.ofNullable(body.getElementById("offers_table"))
-                    .orElseGet(() -> body.getElementById("results-list"))
+                    .orElseGet(() -> body.getElementsByClass("listing-grid-container").first())
                     .select(".thumb")
                     .stream()
                     .map(it -> {
@@ -53,7 +53,7 @@ public class Widespread extends BaseParser implements Parser {
 
     private String extractLink(Element it) {
         String link = getHref(it);
-        if (StringUtil.isBlank(link)) {
+        if (StringUtils.isBlank(link)) {
             link = it.select("a").attr("href");
         }
         return link;

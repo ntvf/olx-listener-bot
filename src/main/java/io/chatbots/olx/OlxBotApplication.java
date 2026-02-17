@@ -1,7 +1,6 @@
 package io.chatbots.olx;
 
 import io.chatbots.olx.checker.RegressionChecker;
-import io.chatbots.olx.config.StorageConfig;
 import io.chatbots.olx.grabber.OlxGrabber;
 import io.chatbots.olx.grabber.OlxGrabberImpl;
 import io.chatbots.olx.grabber.parser.BA;
@@ -9,59 +8,42 @@ import io.chatbots.olx.grabber.parser.BR;
 import io.chatbots.olx.grabber.parser.Future;
 import io.chatbots.olx.grabber.parser.Parser;
 import io.chatbots.olx.grabber.parser.QA;
-import io.chatbots.olx.grabber.parser.Widespread;
+import io.chatbots.olx.grabber.parser.bazaraki.BazarakiParser;
 import io.chatbots.olx.i18n.ResourceBundleTranslationService;
 import io.chatbots.olx.i18n.TranslationService;
-import org.springframework.beans.factory.InitializingBean;
-import org.springframework.beans.factory.annotation.Autowired;
+import lombok.SneakyThrows;
+import lombok.val;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.cache.annotation.EnableCaching;
 import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
-import org.springframework.context.annotation.Import;
-import org.springframework.scheduling.annotation.EnableScheduling;
-import org.springframework.scheduling.annotation.Scheduled;
-import org.telegram.telegrambots.ApiContextInitializer;
 import org.telegram.telegrambots.meta.TelegramBotsApi;
+import org.telegram.telegrambots.updatesreceivers.DefaultBotSession;
 
 import java.util.HashMap;
 import java.util.Map;
 
 @SpringBootApplication
-@EnableScheduling
-@Configuration
 @EnableCaching
-@Import(StorageConfig.class)
-public class OlxBotApplication implements InitializingBean {
-
-
-    @Autowired
-    private OlxTelegramBot olxTelegramBot;
-
-    @Autowired
-    private RegressionChecker regressionChecker;
+public class OlxBotApplication {
 
     public static void main(String[] args) {
-        ApiContextInitializer.init();
         SpringApplication.run(OlxBotApplication.class);
     }
 
-    @Override
-    public void afterPropertiesSet() throws Exception {
-        TelegramBotsApi telegramBotsApi = new TelegramBotsApi();
-        telegramBotsApi.registerBot(olxTelegramBot);
-    }
-
     @Bean
+    @SneakyThrows
     public OlxTelegramBot olxTelegramBot(
             @Value("${bot.name}")
-                    String botName,
+            String botName,
             @Value("${bot.token}")
-                    String botToken
+            String botToken
     ) {
-        return new OlxTelegramBot(botName, botToken);
+        val bot = new OlxTelegramBot(botName, botToken);
+        TelegramBotsApi telegramBotsApi = new TelegramBotsApi(DefaultBotSession.class);
+        telegramBotsApi.registerBot(bot);
+        return bot;
     }
 
     @Bean
@@ -73,27 +55,29 @@ public class OlxBotApplication implements InitializingBean {
     public Map<String, Parser> parsers() {
         return new HashMap<String, Parser>() {
             {
-                put("olx.ua", new Widespread());
+                put("olx.ua", new QA());
                 put("olx.ba", new BA());
-                put("olx.bg", new Widespread());
-                put("olx.pl", new Widespread());
-                put("olx.ro", new Widespread());
-                put("olx.pt", new Widespread());
-                put("dubizzle.com", new Widespread());
+                put("olx.bg", new QA());
+                put("olx.pl", new QA());
+                put("olx.ro", new QA());
+                put("olx.pt", new QA());
+                put("dubizzle.com", new QA());
                 put("olx.com.eg", new QA());
                 put("olx.qa", new QA());
                 put("olx.com.br", new BR());
-                put("olx.uz", new Widespread());
-                put("olx.kz", new Widespread());
+                put("olx.uz", new QA());
+                put("olx.kz", new QA());
                 put("olx.in", new Future());
                 put("olx.co.za", new Future());
                 put("olx.com.pk", new Future());
                 put("olx.co.id", new Future());
                 put("olx.com.ar", new Future());
                 put("olx.co.cr", new Future());
+                put("bazaraki.com", new BazarakiParser());
             }
         };
     }
+
 
     @Bean
     public TranslationService translationService() {
@@ -105,14 +89,4 @@ public class OlxBotApplication implements InitializingBean {
         return new RegressionChecker(grabber);
     }
 
-
-    @Scheduled(fixedRate = 10 * 60 * 1_000)
-    public void scheduleSending() {
-        olxTelegramBot.notifySubscribedChats();
-    }
-
-    @Scheduled(fixedRate = 4 * 60 * 60 * 1_000)
-    public void scheduleChecker() {
-        regressionChecker.checkSitesForRegression();
-    }
 }
