@@ -7,14 +7,16 @@ import io.chatbots.olx.stats.BotStatsService;
 import io.chatbots.olx.stats.UserLocaleStats;
 import io.chatbots.olx.storage.ListenerStorage;
 import io.chatbots.olx.storage.entity.Listener;
+import jakarta.annotation.PreDestroy;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import lombok.val;
 import org.apache.commons.codec.digest.DigestUtils;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.Strings;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.telegram.telegrambots.bots.TelegramLongPollingBot;
-import org.telegram.telegrambots.meta.api.methods.BotApiMethod;
+import org.telegram.telegrambots.longpolling.util.LongPollingSingleThreadUpdateConsumer;
+import org.telegram.telegrambots.meta.api.methods.botapimethods.BotApiMethod;
 import org.telegram.telegrambots.meta.api.methods.send.SendDocument;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
 import org.telegram.telegrambots.meta.api.objects.MessageEntity;
@@ -23,8 +25,8 @@ import org.telegram.telegrambots.meta.api.objects.User;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.ReplyKeyboardMarkup;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.KeyboardRow;
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
+import org.telegram.telegrambots.meta.generics.TelegramClient;
 
-import javax.annotation.PreDestroy;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.util.ArrayList;
@@ -40,13 +42,11 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 @Slf4j
-public class OlxTelegramBot extends TelegramLongPollingBot {
+public class OlxTelegramBot implements LongPollingSingleThreadUpdateConsumer {
 
     public static final String MARKDOWN_PARCE_MODE = "Markdown";
     private static final String REMOVE_PREFIX = "/r_";
     private static final String LISTENERS_COMMAND = "/listeners";
-    private final String botName;
-    private final String botToken;
     private final ExecutorService executors = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() * 4);
     @Autowired
     private ListenerStorage listenerStorage;
@@ -56,11 +56,8 @@ public class OlxTelegramBot extends TelegramLongPollingBot {
     private OlxGrabber olxGrabber;
     @Autowired
     private TranslationService translationService;
-
-    public OlxTelegramBot(String botName, String botToken) {
-        this.botName = botName;
-        this.botToken = botToken;
-    }
+    @Autowired
+    private TelegramClient telegramClient;
 
     @PreDestroy
     public void destroy() {
@@ -68,15 +65,25 @@ public class OlxTelegramBot extends TelegramLongPollingBot {
     }
 
     @Override
-    public void onUpdateReceived(Update update) {
+    public void consume(Update update) {
         try {
 
-            if ("private".equals(update.getMessage().getChat().getType())
-                    || Optional.ofNullable(update.getMessage().getEntities())
-                    .orElse(Collections.emptyList())
-                    .stream()
-                    .anyMatch(it -> "mention".equals(it.getType()))) {
+            if ("private".equals(update.getMessage().getChat().getType())) {
                 List<BooleanSupplier> handlers = registerHandlers(update);
+                walkThrough(handlers);
+            } else if ("group".equals(update.getMessage().getChat().getType())) {
+                List<BooleanSupplier> handlers = new ArrayList<>();
+                handlers.add(execute(this::start, update, true));
+                handlers.add(execute(this::listListeners, update, true));
+                handlers.add(execute(this::removeListener, update, true));
+                handlers.add(execute(this::stats, update, true));
+                handlers.add(execute(this::unknownCommand, update, true));
+                if (Optional.ofNullable(update.getMessage().getEntities())
+                        .orElse(Collections.emptyList())
+                        .stream()
+                        .anyMatch(it -> "mention".equals(it.getType()))) {
+                    handlers.add(execute(this::addListener, update, true));
+                }
                 walkThrough(handlers);
             }
         } catch (Exception e) {
@@ -113,6 +120,7 @@ public class OlxTelegramBot extends TelegramLongPollingBot {
                 .orElse(initial);
 
     }
+
     private HandleResult stats(Update update) {
         if ("/stats".equals(getText(update))) {
             val botStats = botStatsService.getBotStats();
@@ -143,7 +151,7 @@ public class OlxTelegramBot extends TelegramLongPollingBot {
     @SneakyThrows
     private HandleResult addListener(Update update) {
         String url = getText(update);
-        if (StringUtils.containsIgnoreCase(url, "http")) {
+        if (Strings.CI.contains(url, "http")) {
             User user = update.getMessage().getFrom();
             val newListener = Listener.builder()
                     .userId(user.getId())
@@ -246,10 +254,10 @@ public class OlxTelegramBot extends TelegramLongPollingBot {
     @SneakyThrows(TelegramApiException.class)
     private synchronized boolean processResults(HandleResult handleResult) {
         for (BotApiMethod method : handleResult.getBotApiMethods()) {
-            execute(method);
+            telegramClient.execute(method);
         }
         for (SendDocument document : handleResult.getSendDocuments()) {
-            execute(document);
+            telegramClient.execute(document);
         }
         handleResult.getCallBack().run();
         if (handleResult != HandleResult.EMPTY) {
@@ -261,12 +269,12 @@ public class OlxTelegramBot extends TelegramLongPollingBot {
 
     private HandleResult start(Update update) {
         if ("/start".equals(getText(update))) {
-            ReplyKeyboardMarkup replyKeyboardMarkup = new ReplyKeyboardMarkup();
+            List<KeyboardRow> keyboard = new ArrayList<>();
+            ReplyKeyboardMarkup replyKeyboardMarkup = new ReplyKeyboardMarkup(keyboard);
             replyKeyboardMarkup.setSelective(true);
             replyKeyboardMarkup.setResizeKeyboard(true);
             replyKeyboardMarkup.setOneTimeKeyboard(false);
 
-            List<KeyboardRow> keyboard = new ArrayList<>();
             KeyboardRow keyboardFirstRow = new KeyboardRow();
             keyboardFirstRow.add(LISTENERS_COMMAND);
             keyboard.add(keyboardFirstRow);
@@ -281,16 +289,6 @@ public class OlxTelegramBot extends TelegramLongPollingBot {
             ).build();
         }
         return HandleResult.EMPTY;
-    }
-
-    @Override
-    public String getBotUsername() {
-        return botName;
-    }
-
-    @Override
-    public String getBotToken() {
-        return botToken;
     }
 
     public void notifySubscribedChats() {

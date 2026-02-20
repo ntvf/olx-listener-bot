@@ -1,7 +1,7 @@
 package io.chatbots.olx.grabber.parser;
 
+import com.github.dockerjava.zerodep.shaded.org.apache.hc.core5.net.URIBuilder;
 import lombok.SneakyThrows;
-import org.apache.http.client.utils.URIBuilder;
 
 import java.util.Collections;
 

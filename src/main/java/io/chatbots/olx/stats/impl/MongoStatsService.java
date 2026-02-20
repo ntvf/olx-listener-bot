@@ -10,7 +10,6 @@ import org.apache.commons.lang3.tuple.Pair;
 import org.jongo.Jongo;
 import org.jongo.MongoCollection;
 
-import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
@@ -26,6 +25,10 @@ public class MongoStatsService implements BotStatsService {
         listeners = jongo.getCollection(LISTENERS_COLLECTION);
     }
 
+    private static String getUserKey(Listener listener) {
+        return listener.getUserFirstName() + listener.getUserName() + listener.getUserId();
+    }
+
     @Override
     public BotStats getBotStats() {
         val listenerIterator = listeners.find("{}").projection("{lastOffersHashes : 0}")
@@ -36,8 +39,8 @@ public class MongoStatsService implements BotStatsService {
         long activeListenersCount = 0;
         val allUsers = new HashSet<>();
         val activeUsers = new HashSet<>();
-        val allUsersLocales = new HashSet<Pair<Long ,String>>();
-        val activeUsersLocales = new HashSet<Pair<Long ,String>>();
+        val allUsersLocales = new HashSet<Pair<Long, String>>();
+        val activeUsersLocales = new HashSet<Pair<Long, String>>();
 
         while (listenerIterator.hasNext()) {
             Listener listener = listenerIterator.next();
@@ -45,10 +48,10 @@ public class MongoStatsService implements BotStatsService {
             if (listener.isActive()) {
                 activeListenersCount++;
                 activeUsers.add(getUserKey(listener));
-                activeUsersLocales.add(new ImmutablePair(listener.getUserId(),listener.getUserLanguageCode()));
+                activeUsersLocales.add(new ImmutablePair(listener.getUserId(), listener.getUserLanguageCode()));
             }
             allUsers.add(getUserKey(listener));
-            allUsersLocales.add(new ImmutablePair(listener.getUserId(),listener.getUserLanguageCode()));
+            allUsersLocales.add(new ImmutablePair(listener.getUserId(), listener.getUserLanguageCode()));
         }
 
         return BotStats.builder()
@@ -65,14 +68,10 @@ public class MongoStatsService implements BotStatsService {
                 .build();
     }
 
-    private Map<String, Integer> mapLocales(Set<Pair<Long,String>> allUsersLocales) {
+    private Map<String, Integer> mapLocales(Set<Pair<Long, String>> allUsersLocales) {
         return allUsersLocales.stream().collect(Collectors.groupingBy(Pair::getRight))
                 .entrySet()
                 .stream()
                 .collect(Collectors.toMap(Map.Entry::getKey, it -> it.getValue().size()));
-    }
-
-    private static String getUserKey(Listener listener) {
-        return listener.getUserFirstName() + listener.getUserName() + listener.getUserId();
     }
 }

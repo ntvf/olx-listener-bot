@@ -1,5 +1,6 @@
 package io.chatbots.olx;
 
+import io.chatbots.container.EnableTestMongoContainer;
 import io.chatbots.olx.checker.RegressionChecker;
 import io.chatbots.olx.grabber.OlxGrabber;
 import io.chatbots.olx.grabber.OlxGrabberImpl;
@@ -18,12 +19,14 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.cache.annotation.EnableCaching;
 import org.springframework.context.annotation.Bean;
-import org.telegram.telegrambots.meta.TelegramBotsApi;
-import org.telegram.telegrambots.updatesreceivers.DefaultBotSession;
+import org.telegram.telegrambots.client.okhttp.OkHttpTelegramClient;
+import org.telegram.telegrambots.longpolling.TelegramBotsLongPollingApplication;
+import org.telegram.telegrambots.meta.generics.TelegramClient;
 
 import java.util.HashMap;
 import java.util.Map;
 
+@EnableTestMongoContainer
 @SpringBootApplication
 @EnableCaching
 public class OlxBotApplication {
@@ -40,10 +43,18 @@ public class OlxBotApplication {
             @Value("${bot.token}")
             String botToken
     ) {
-        val bot = new OlxTelegramBot(botName, botToken);
-        TelegramBotsApi telegramBotsApi = new TelegramBotsApi(DefaultBotSession.class);
-        telegramBotsApi.registerBot(bot);
+        val bot = new OlxTelegramBot();
+        TelegramBotsLongPollingApplication telegramBotsApi = new TelegramBotsLongPollingApplication();
+        telegramBotsApi.registerBot(botToken, bot);
         return bot;
+    }
+
+    @Bean
+    public TelegramClient telegramClient(
+            @Value("${bot.token}")
+            String botToken
+    ) {
+        return new OkHttpTelegramClient(botToken);
     }
 
     @Bean

@@ -3,7 +3,7 @@ package io.chatbots.olx;
 import lombok.Builder;
 import lombok.Data;
 import lombok.Singular;
-import org.telegram.telegrambots.meta.api.methods.BotApiMethod;
+import org.telegram.telegrambots.meta.api.methods.botapimethods.BotApiMethod;
 import org.telegram.telegrambots.meta.api.methods.send.SendDocument;
 
 import java.util.List;
@@ -19,5 +19,7 @@ public class HandleResult {
     private List<BotApiMethod> botApiMethods;
     @Singular
     private List<SendDocument> sendDocuments;
-    @Builder.Default private PostHandleCallBack callBack = () -> {};
+    @Builder.Default
+    private PostHandleCallBack callBack = () -> {
+    };
 }
