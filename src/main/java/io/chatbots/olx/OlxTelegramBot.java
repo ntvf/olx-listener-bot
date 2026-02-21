@@ -14,6 +14,7 @@ import lombok.val;
 import org.apache.commons.codec.digest.DigestUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.Strings;
+import org.jetbrains.annotations.NotNull;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.telegram.telegrambots.longpolling.util.LongPollingSingleThreadUpdateConsumer;
 import org.telegram.telegrambots.meta.api.methods.botapimethods.BotApiMethod;
@@ -29,6 +30,8 @@ import org.telegram.telegrambots.meta.generics.TelegramClient;
 
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
@@ -45,6 +48,7 @@ import java.util.stream.Collectors;
 public class OlxTelegramBot implements LongPollingSingleThreadUpdateConsumer {
 
     public static final String MARKDOWN_PARCE_MODE = "Markdown";
+    public static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd hh:mm");
     private static final String REMOVE_PREFIX = "/r_";
     private static final String LISTENERS_COMMAND = "/listeners";
     private final ExecutorService executors = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() * 4);
@@ -227,6 +231,12 @@ public class OlxTelegramBot implements LongPollingSingleThreadUpdateConsumer {
     private Locale getLocale(Update update) {
         return Optional.ofNullable(update.getMessage().getFrom())
                 .map(User::getLanguageCode)
+                .map(this::getLocale)
+                .orElse(Locale.US);
+    }
+
+    private Locale getLocale(String languageCode) {
+        return Optional.ofNullable(languageCode)
                 .map(Locale::forLanguageTag)
                 .orElse(Locale.US);
     }
@@ -323,7 +333,10 @@ public class OlxTelegramBot implements LongPollingSingleThreadUpdateConsumer {
 
     private void sendNotificationToChat(Listener listener, Offer offer) {
         HandleResult.HandleResultBuilder builder = HandleResult.builder();
-        String text = offer.getName() + "\r\n"
+        String text = Optional.ofNullable(offer.getUpdatedAt())
+                .map(it -> getUpdatedText(listener, it) + "\r\n")
+                .orElse("")
+                + offer.getName() + "\r\n"
                 + offer.getUrl() + "\r\n";
         builder.botApiMethod(
                 SendMessage.builder()
@@ -334,6 +347,10 @@ public class OlxTelegramBot implements LongPollingSingleThreadUpdateConsumer {
         log.info("Going to send message:{} to chat:{}", text, listener.getChatId());
         processResults(builder.build());
 
+    }
+
+    private @NotNull String getUpdatedText(Listener listener, LocalDateTime it) {
+        return translationService.translate("listeners.updated", getLocale(listener.getUserLanguageCode())) + " " + it.format(DATE_TIME_FORMATTER);
     }
 
     private String getHash(Offer it) {

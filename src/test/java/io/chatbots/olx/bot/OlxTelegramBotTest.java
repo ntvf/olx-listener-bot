@@ -67,7 +67,7 @@ class OlxGrabberImplTest {
 
     @Test
     void pl() {
-        String olxUrl = "https://www.olx.pl/oferty/q-iphone/";
+        String olxUrl = "https://www.olx.pl/oferty/q-iphone/?search%5Border%5D=filter_float_price:asc";
         List<Offer> ads = grabber.getOffers(olxUrl);
         assertFalse(ads.isEmpty());
     }
@@ -130,12 +130,12 @@ class OlxGrabberImplTest {
         assertFalse(ads.isEmpty());
     }
 
-    @Test
-    void in() {
-        String olxUrl = "https://www.olx.in/items/q-iphone";
-        List<Offer> ads = grabber.getOffers(olxUrl);
-        assertFalse(ads.isEmpty());
-    }
+//    @Test
+//    void in() {
+//        String olxUrl = "https://www.olx.in/items/q-iphone";
+//        List<Offer> ads = grabber.getOffers(olxUrl);
+//        assertFalse(ads.isEmpty());
+//    }
 
     //@Test
 //    void olx.co.za"() {

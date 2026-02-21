@@ -14,7 +14,7 @@ public class SchedulerConfig {
     private final OlxTelegramBot olxTelegramBot;
     private final RegressionChecker regressionChecker;
 
-    //        @Scheduled(fixedRate = 1* 20 * 1_000)
+    //            @Scheduled(fixedRate = 1* 20 * 1_000)
     @Scheduled(fixedRate = 10 * 60 * 1_000)
     public void scheduleSending() {
         olxTelegramBot.notifySubscribedChats();

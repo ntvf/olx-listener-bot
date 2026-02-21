@@ -3,26 +3,72 @@ package io.chatbots.olx.grabber.parser;
 import io.chatbots.olx.grabber.Offer;
 import lombok.extern.slf4j.Slf4j;
 import lombok.val;
+import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.Strings;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Element;
 
 import java.io.IOException;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.util.Collections;
 import java.util.List;
 import java.util.stream.Collectors;
 
 @Slf4j
 public class QA extends BaseParser implements Parser {
+
+    private static String getSortedByLastCreatedUrl(String url) {
+        String desiredSort = "search%5Border%5D=created_at:desc";
+        int questionMarkIndex = url.indexOf('?');
+        if (questionMarkIndex == -1) {
+            url = url + "?" + desiredSort;
+        } else {
+
+            String base = url.substring(0, questionMarkIndex);
+            String query = url.substring(questionMarkIndex + 1);
+
+            String[] params = query.split("&");
+
+            StringBuilder newQuery = new StringBuilder();
+
+            for (String param : params) {
+                if (param.startsWith("search%5Border%5D=")) {
+                    continue;
+                }
+                if (!newQuery.isEmpty()) {
+                    newQuery.append("&");
+                }
+                newQuery.append(param);
+            }
+
+            if (!newQuery.isEmpty()) {
+                newQuery.insert(0, desiredSort + "&");
+            } else {
+                newQuery.append(desiredSort);
+            }
+
+            url = base + "?" + newQuery;
+        }
+        return url;
+    }
+
+    private LocalDateTime getUpdatedAt(Element card) {
+        try {
+            val updatedText = card.select("p[data-testid=location-date]").text().split(" - ")[1];
+            val parsed = PlUpdatedAtDateParser.parseOlxDate(updatedText);
+            return LocalDateTime.ofInstant(parsed.toInstant(ZoneOffset.UTC), ZoneId.of("Europe/Warsaw"));
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
     @Override
     public List<Offer> parse(String url) {
         try {
 
-            if (url.contains("?")) {
-                url = url + "&";
-            } else {
-                url = url + "?";
-            }
-            url = url + "search%5Border%5D=created_at%3Adesc";
+            url = getSortedByLastCreatedUrl(url);
 
             val body = Jsoup.connect(url).get().body();
             String baseUrl = url.endsWith("/") ? url.substring(0, url.length() - 1) : url;
@@ -51,13 +97,18 @@ public class QA extends BaseParser implements Parser {
                         // Right now content stays empty – list page doesn't have description
                         String content = ""; // ← can be improved only by opening detail page
 
+                        val updatedAt = getUpdatedAt(card);
                         return Offer.builder()
                                 .url(cleanUrlFromQueryParams(link))
                                 .content(content)
                                 .name(name)
+                                .updatedAt(updatedAt)
+                                .promoted(StringUtils.isNotBlank(link) && Strings.CI.contains(link, "promoted"))
                                 .build();
                     })
-                    .filter(offer -> !offer.getName().isBlank() && !offer.getUrl().isBlank()) // skip broken cards
+                    .filter(it -> !it.isPromoted())
+                    .filter(it -> StringUtils.isNotBlank(it.getName()))
+                    .filter(it -> StringUtils.isNotBlank(it.getUrl()))
                     .collect(Collectors.toList());
         } catch (IOException e) {
             log.warn("Error while parsing url:" + url, e);

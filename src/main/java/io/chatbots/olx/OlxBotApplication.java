@@ -1,6 +1,5 @@
 package io.chatbots.olx;
 
-import io.chatbots.container.EnableTestMongoContainer;
 import io.chatbots.olx.checker.RegressionChecker;
 import io.chatbots.olx.grabber.OlxGrabber;
 import io.chatbots.olx.grabber.OlxGrabberImpl;
@@ -26,7 +25,6 @@ import org.telegram.telegrambots.meta.generics.TelegramClient;
 import java.util.HashMap;
 import java.util.Map;
 
-@EnableTestMongoContainer
 @SpringBootApplication
 @EnableCaching
 public class OlxBotApplication {
