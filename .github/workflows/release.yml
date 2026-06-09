@@ -1,0 +1,55 @@
+name: Release
+
+on:
+  push:
+    branches: [ master ]
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java 25
+        uses: actions/setup-java@v4
+        with:
+          java-version: '25'
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Build
+        run: mvn -B package -DskipTests
+
+      - name: Prepare release assets
+        run: |
+          JAR=target/olx-listener-bot-0.0.1-SNAPSHOT.jar
+
+          # Extract layers
+          mkdir -p target/extracted
+          java -Djarmode=tools -jar "$JAR" extract --destination target/extracted
+
+          # Libs checksum (hash all lib jars deterministically)
+          find target/extracted/lib -type f | sort | xargs md5sum | md5sum | awk '{print $1}' > target/olx-listener-bot-libs-checksum.txt
+
+          # App-only thin jar (just the app layer, not libs)
+          cp target/extracted/olx-listener-bot-0.0.1-SNAPSHOT.jar target/olx-listener-bot-app.jar
+
+          # Full jar rename
+          cp "$JAR" target/olx-listener-bot.jar
+
+      - name: Compute tag
+        id: tag
+        run: echo "tag=v$(date -u +'%Y%m%d%H%M%S')" >> "$GITHUB_OUTPUT"
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: ${{ steps.tag.outputs.tag }}
+          files: |
+            target/olx-listener-bot.jar
+            target/olx-listener-bot-app.jar
+            target/olx-listener-bot-libs-checksum.txt
