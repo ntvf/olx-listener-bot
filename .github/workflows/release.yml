@@ -42,7 +42,16 @@ jobs:
 
       - name: Compute tag
         id: tag
-        run: echo "tag=v$(date -u +'%Y%m%d%H%M%S')" >> "$GITHUB_OUTPUT"
+        run: |
+          git fetch --tags
+          latest=$(git tag --list 'v*.*.*' --sort=-version:refname | head -1)
+          if [ -z "$latest" ]; then
+            next="v0.0.1"
+          else
+            IFS='.' read -r major minor patch <<< "${latest#v}"
+            next="v${major}.${minor}.$((patch + 1))"
+          fi
+          echo "tag=$next" >> "$GITHUB_OUTPUT"
 
       - name: Create release
         uses: softprops/action-gh-release@v2
