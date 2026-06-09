@@ -19,7 +19,7 @@ import java.util.stream.Collectors;
 @Slf4j
 public class QA extends BaseParser implements Parser {
 
-    private static String getSortedByLastCreatedUrl(String url) {
+    static String getSortedByLastCreatedUrl(String url) {
         String desiredSort = "search%5Border%5D=created_at:desc";
         int questionMarkIndex = url.indexOf('?');
         if (questionMarkIndex == -1) {
@@ -56,12 +56,18 @@ public class QA extends BaseParser implements Parser {
 
     private LocalDateTime getUpdatedAt(Element card) {
         try {
-            val updatedText = card.select("p[data-testid=location-date]").text().split(" - ")[1];
-            val parsed = PlUpdatedAtDateParser.parseOlxDate(updatedText);
-            return LocalDateTime.ofInstant(parsed.toInstant(ZoneOffset.UTC), ZoneId.of("Europe/Warsaw"));
+            String raw = card.select("p[data-testid=location-date]").text();
+            String[] parts = raw.split(" - ");
+            // skip [0] (city/location), try remaining segments for a parseable date
+            for (int i = 1; i < parts.length; i++) {
+                LocalDateTime dt = PlUpdatedAtDateParser.parseOlxDate(parts[i]);
+                if (dt != null) {
+                    return LocalDateTime.ofInstant(dt.toInstant(ZoneOffset.UTC), ZoneId.of("Europe/Warsaw"));
+                }
+            }
         } catch (Exception ignored) {
-            return null;
         }
+        return null;
     }
 
     @Override
@@ -69,38 +75,35 @@ public class QA extends BaseParser implements Parser {
         try {
 
             url = getSortedByLastCreatedUrl(url);
+            log.info("Fetching url={}", url);
 
-            val body = Jsoup.connect(url).get().body();
+            val body = Jsoup.connect(url)
+                    .userAgent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+                    .header("Accept-Language", "en-US,en;q=0.9")
+                    .timeout(15_000)
+                    .get().body();
             String baseUrl = url.endsWith("/") ? url.substring(0, url.length() - 1) : url;
 
             return body.getElementsByAttributeValue("data-cy", "l-card").stream()
-                    .filter(card -> card.select("div[data-testid=adCard-featured]").isEmpty()) // not featured
                     .map(card -> {
-                        // Title – the most important fix
-                        String name = //card.select("h4.css-hzlye5").text();
-                                // Alternative:
-                                card.select("[data-cy=ad-card-title] h4").text();
+                        String name = card.select("[data-cy=ad-card-title] h4").text();
 
-                        // Link – take the one inside .css-1apmciz (second occurrence is usually cleaner)
-                        Element linkElement = card.selectFirst(".css-1apmciz a[href]");
+                        Element linkElement = card.selectFirst("[data-cy=ad-card-title] a[href]");
                         String link = linkElement != null ? linkElement.attr("href") : "";
 
                         if (link.isEmpty()) {
-                            // fallback – any link
-                            link = card.selectFirst("a[href]").attr("href");
+                            Element anyLink = card.selectFirst("a[href]");
+                            link = anyLink != null ? anyLink.attr("href") : "";
                         }
 
                         if (link.startsWith("/")) {
-                            link = baseUrl.substring(0, baseUrl.indexOf("/", 8)) + link; // https://www.olx.pl/...
+                            link = baseUrl.substring(0, baseUrl.indexOf("/", 8)) + link;
                         }
-
-                        // Right now content stays empty – list page doesn't have description
-                        String content = ""; // ← can be improved only by opening detail page
 
                         val updatedAt = getUpdatedAt(card);
                         return Offer.builder()
                                 .url(cleanUrlFromQueryParams(link))
-                                .content(content)
+                                .content("")
                                 .name(name)
                                 .updatedAt(updatedAt)
                                 .promoted(StringUtils.isNotBlank(link) && Strings.CI.contains(link, "promoted"))

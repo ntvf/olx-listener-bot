@@ -1,5 +1,7 @@
 package io.chatbots.olx.i18n;
 
+import org.springframework.stereotype.Service;
+
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -10,6 +12,7 @@ import java.util.Locale;
 import java.util.PropertyResourceBundle;
 import java.util.ResourceBundle;
 
+@Service
 public class ResourceBundleTranslationService implements TranslationService {
 
     @Override
@@ -19,6 +22,11 @@ public class ResourceBundleTranslationService implements TranslationService {
     }
 
     public static class UTF8Control extends ResourceBundle.Control {
+        @Override
+        public Locale getFallbackLocale(String baseName, Locale locale) {
+            return locale.equals(Locale.ROOT) ? null : Locale.ROOT;
+        }
+
         public ResourceBundle newBundle
                 (String baseName, Locale locale, String format, ClassLoader loader, boolean reload)
                 throws IOException {

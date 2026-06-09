@@ -51,6 +51,28 @@ public class PlUpdatedAtDateParserTest {
                 Arguments.of(
                         "Odświeżono dnia 5 marca 2025",
                         LocalDateTime.of(2025, 3, 5, 0, 0)
+                ),
+                // Russian
+                Arguments.of(
+                        "Сегодня в 12:17",
+                        LocalDateTime.of(2026, 2, 21, 12, 17)
+                ),
+                Arguments.of(
+                        "Сегодня в 9:05",
+                        LocalDateTime.of(2026, 2, 21, 9, 5)
+                ),
+                Arguments.of(
+                        "Вчера в 18:45",
+                        LocalDateTime.of(2026, 2, 20, 18, 45)
+                ),
+                // Ukrainian
+                Arguments.of(
+                        "Сьогодні о 12:17",
+                        LocalDateTime.of(2026, 2, 21, 12, 17)
+                ),
+                Arguments.of(
+                        "Вчора о 08:30",
+                        LocalDateTime.of(2026, 2, 20, 8, 30)
                 )
         );
     }

@@ -32,8 +32,14 @@ public class BazarakiParser extends BaseParser implements Parser {
                 val symbol = StringUtils.isBlank(parsedUrl.getQuery()) ? "?" : "&";
                 url = url + symbol + overriddenOrdering;
             }
+            log.info("Fetching url={}", url);
+            val scheme = parsedUrl.getProtocol();
             val host = parsedUrl.getHost();
-            val body = Jsoup.connect(url).get().body();
+            val body = Jsoup.connect(url)
+                    .userAgent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+                    .header("Accept-Language", "en-US,en;q=0.9")
+                    .timeout(15_000)
+                    .get().body();
 
             val blocks = body.getElementsByClass("announcement-container");
 
@@ -41,13 +47,15 @@ public class BazarakiParser extends BaseParser implements Parser {
                     .filter(it -> it.hasAttr("data-t-regular"))
                     .forEach(block -> {
                         val title = block.getElementsByClass("announcement-block__title");
+                        val href = title.attr("href");
+                        val absoluteUrl = href.startsWith("http") ? href : scheme + "://" + host + href;
                         val content = title.text()
                                 + " " + block.getElementsByClass("announcement-block__description").text()
                                 + " " + block.getElementsByClass("announcement-block__price").text();
                         offers.add(Offer.builder()
                                 .name(title.text())
                                 .content(content)
-                                .url(host + title.attr("href"))
+                                .url(absoluteUrl)
                                 .build());
                     });
         } catch (Exception e) {

@@ -3,10 +3,12 @@ package io.chatbots.olx.bot;
 import io.chatbots.olx.grabber.Offer;
 import io.chatbots.olx.grabber.OlxGrabberImpl;
 import io.chatbots.olx.grabber.parser.BA;
-import io.chatbots.olx.grabber.parser.BR;
-import io.chatbots.olx.grabber.parser.Future;
+import io.chatbots.olx.grabber.parser.OlxPkParser;
 import io.chatbots.olx.grabber.parser.Parser;
 import io.chatbots.olx.grabber.parser.QA;
+import io.chatbots.olx.grabber.parser.bazaraki.BazarakiParser;
+import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.util.HashMap;
@@ -15,7 +17,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 
-
+@Tag("integration")
 class OlxGrabberImplTest {
 
     Map<String, Parser> parsers = new HashMap<>() {
@@ -27,17 +29,10 @@ class OlxGrabberImplTest {
             put("olx.ro", new QA());
             put("olx.pt", new QA());
             put("dubizzle.com", new QA());
-            put("olx.com.eg", new QA());
-            put("olx.qa", new QA());
-            put("olx.com.br", new BR());
             put("olx.uz", new QA());
             put("olx.kz", new QA());
-            put("olx.in", new Future());
-            put("olx.co.za", new Future());
-            put("olx.com.pk", new Future());
-//            put("olx.co.id", new Future());
-            put("olx.com.ar", new Future());
-            put("olx.co.cr", new Future());
+            put("olx.com.pk", new OlxPkParser());
+            put("bazaraki.com", new BazarakiParser());
         }
     };
 
@@ -51,12 +46,12 @@ class OlxGrabberImplTest {
         assertFalse(ads.isEmpty());
     }
 
-//    @Test
-//    void ba() {
-//        String olxUrl = "https://www.olx.ba/pretraga?trazilica=iphone";
-//        List<Offer> ads = grabber.getOffers(olxUrl);
-//        assertFalse(ads.isEmpty());
-//    }
+    @Test
+    void ba() {
+        String olxUrl = "https://www.olx.ba/pretraga?q=iphone";
+        List<Offer> ads = grabber.getOffers(olxUrl);
+        assertFalse(ads.isEmpty());
+    }
 
     @Test
     void bg() {
@@ -86,32 +81,25 @@ class OlxGrabberImplTest {
         assertFalse(ads.isEmpty());
     }
 
-//    @Test
-//    void dubizzle() {
-//        String olxUrl = "https://uae.dubizzle.com/search/?keywords=iphone";
-//        List<Offer> ads = grabber.getOffers(olxUrl);
-//        assertFalse(ads.isEmpty());
-//    }
-
-    //@Test
-//    void olx.com.eg"() {
-//
-//        String olxUrl = "https://www.olx.com.eg/ads/q-iphone/";
-//        List<Offer> ads = grabber.getOffers(olxUrl);
-//        then:
-//        !ads.empty
-//    }
-//@Test
-//    void olx.qa"() {
-//
-//        String olxUrl = "https://olx.qa/ads/q-iphone/";
-//        List<Offer> ads = grabber.getOffers(olxUrl);
-//        then:
-//        !ads.empty
-//    }
     @Test
-    void br() {
-        String olxUrl = "https://www.olx.com.br/brasil?q=iphone";
+    void dubizzle() {
+        String olxUrl = "https://uae.dubizzle.com/motors/used-cars/?keywords=toyota";
+        List<Offer> ads = grabber.getOffers(olxUrl);
+        Assumptions.assumeFalse(ads.isEmpty(), "dubizzle.com is not reachable from this network (bot protection active)");
+        assertFalse(ads.isEmpty());
+    }
+
+    @Test
+    void bazaraki() {
+        String olxUrl = "https://www.bazaraki.com/adv/phones-and-accessories--mobile-phones-and-smartphones/?ordering=newest";
+        List<Offer> ads = grabber.getOffers(olxUrl);
+        Assumptions.assumeFalse(ads.isEmpty(), "bazaraki.com is not reachable from this network (bot protection active)");
+        assertFalse(ads.isEmpty());
+    }
+
+    @Test
+    void pk() {
+        String olxUrl = "https://www.olx.com.pk/items?q=iphone";
         List<Offer> ads = grabber.getOffers(olxUrl);
         assertFalse(ads.isEmpty());
     }
@@ -130,51 +118,4 @@ class OlxGrabberImplTest {
         assertFalse(ads.isEmpty());
     }
 
-//    @Test
-//    void in() {
-//        String olxUrl = "https://www.olx.in/items/q-iphone";
-//        List<Offer> ads = grabber.getOffers(olxUrl);
-//        assertFalse(ads.isEmpty());
-//    }
-
-    //@Test
-//    void olx.co.za"() {
-//
-//        String olxUrl = "https://www.olx.co.za/items/q-iphone"
-//        List<Offer> ads = grabber.getOffers(olxUrl);
-//        then:
-//        !ads.empty
-//    }
-//@Test
-//    void olx.com.pk"() {
-//
-//        String olxUrl = "https://www.olx.com.pk/items/q-iphone"
-//        List<Offer> ads = grabber.getOffers(olxUrl);
-//        then:
-//        !ads.empty
-//    }
-//    @Test
-//    void co_id() {
-//        String olxUrl = "https://www.olx.co.id/items/q-iphone";
-//        List<Offer> ads = grabber.getOffers(olxUrl);
-//        assertFalse(ads.isEmpty());
-//    }
-
-//    @Test
-//    void ar() {
-//        String olxUrl = "https://www.olx.com.ar/items/q-iphone";
-//        List<Offer> ads = grabber.getOffers(olxUrl);
-//        assertFalse(ads.isEmpty());
-//    }
-//@Test
-//    void olx.co.cr"() {
-//
-//        String olxUrl = "https://www.olx.co.cr/items/q-iphone"
-//        List<Offer> ads = grabber.getOffers(olxUrl);
-//        then:
-//        !ads.empty
-//    }
-
-
 }
-

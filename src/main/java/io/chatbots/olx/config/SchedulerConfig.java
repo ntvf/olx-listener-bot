@@ -7,6 +7,8 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.scheduling.annotation.Scheduled;
 
+import java.util.concurrent.TimeUnit;
+
 @Configuration
 @RequiredArgsConstructor
 @EnableScheduling
@@ -14,13 +16,12 @@ public class SchedulerConfig {
     private final OlxTelegramBot olxTelegramBot;
     private final RegressionChecker regressionChecker;
 
-    //            @Scheduled(fixedRate = 1* 20 * 1_000)
-    @Scheduled(fixedRate = 10 * 60 * 1_000)
+    @Scheduled(fixedDelay = 10, timeUnit = TimeUnit.MINUTES)
     public void scheduleSending() {
         olxTelegramBot.notifySubscribedChats();
     }
 
-    @Scheduled(fixedRate = 4 * 60 * 60 * 1_000)
+    @Scheduled(fixedDelay = 4, timeUnit = TimeUnit.HOURS)
     public void scheduleChecker() {
         regressionChecker.checkSitesForRegression();
     }

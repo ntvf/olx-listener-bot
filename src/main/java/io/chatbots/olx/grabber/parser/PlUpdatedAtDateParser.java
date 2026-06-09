@@ -16,23 +16,89 @@ import java.util.regex.Pattern;
 
 @Slf4j
 public class PlUpdatedAtDateParser {
-    private static final Map<String, Integer> POLISH_GENITIVE_MONTHS = new HashMap<>();
+    private static final Map<String, Integer> MONTH_NAMES = new HashMap<>();
     private static final DateTimeFormatter TIME_FMT =
             DateTimeFormatter.ofPattern("HH:mm");
 
     static {
-        POLISH_GENITIVE_MONTHS.put("stycznia", 1);
-        POLISH_GENITIVE_MONTHS.put("lutego", 2);
-        POLISH_GENITIVE_MONTHS.put("marca", 3);
-        POLISH_GENITIVE_MONTHS.put("kwietnia", 4);
-        POLISH_GENITIVE_MONTHS.put("maja", 5);
-        POLISH_GENITIVE_MONTHS.put("czerwca", 6);
-        POLISH_GENITIVE_MONTHS.put("lipca", 7);
-        POLISH_GENITIVE_MONTHS.put("sierpnia", 8);
-        POLISH_GENITIVE_MONTHS.put("września", 9);
-        POLISH_GENITIVE_MONTHS.put("października", 10);
-        POLISH_GENITIVE_MONTHS.put("listopada", 11);
-        POLISH_GENITIVE_MONTHS.put("grudnia", 12);
+        // Polish genitive
+        MONTH_NAMES.put("stycznia", 1);
+        MONTH_NAMES.put("lutego", 2);
+        MONTH_NAMES.put("marca", 3);
+        MONTH_NAMES.put("kwietnia", 4);
+        MONTH_NAMES.put("maja", 5);
+        MONTH_NAMES.put("czerwca", 6);
+        MONTH_NAMES.put("lipca", 7);
+        MONTH_NAMES.put("sierpnia", 8);
+        MONTH_NAMES.put("września", 9);
+        MONTH_NAMES.put("października", 10);
+        MONTH_NAMES.put("listopada", 11);
+        MONTH_NAMES.put("grudnia", 12);
+        // Portuguese
+        MONTH_NAMES.put("janeiro", 1);
+        MONTH_NAMES.put("fevereiro", 2);
+        MONTH_NAMES.put("março", 3);
+        MONTH_NAMES.put("abril", 4);
+        MONTH_NAMES.put("maio", 5);
+        MONTH_NAMES.put("junho", 6);
+        MONTH_NAMES.put("julho", 7);
+        MONTH_NAMES.put("agosto", 8);
+        MONTH_NAMES.put("setembro", 9);
+        MONTH_NAMES.put("outubro", 10);
+        MONTH_NAMES.put("novembro", 11);
+        MONTH_NAMES.put("dezembro", 12);
+        // Bulgarian
+        MONTH_NAMES.put("януари", 1);
+        MONTH_NAMES.put("февруари", 2);
+        MONTH_NAMES.put("март", 3);
+        MONTH_NAMES.put("април", 4);
+        MONTH_NAMES.put("май", 5);
+        MONTH_NAMES.put("юни", 6);
+        MONTH_NAMES.put("юли", 7);
+        MONTH_NAMES.put("август", 8);
+        MONTH_NAMES.put("септември", 9);
+        MONTH_NAMES.put("октомври", 10);
+        MONTH_NAMES.put("ноември", 11);
+        MONTH_NAMES.put("декември", 12);
+        // Ukrainian genitive
+        MONTH_NAMES.put("січня", 1);
+        MONTH_NAMES.put("лютого", 2);
+        MONTH_NAMES.put("березня", 3);
+        MONTH_NAMES.put("квітня", 4);
+        MONTH_NAMES.put("травня", 5);
+        MONTH_NAMES.put("червня", 6);
+        MONTH_NAMES.put("липня", 7);
+        MONTH_NAMES.put("серпня", 8);
+        MONTH_NAMES.put("вересня", 9);
+        MONTH_NAMES.put("жовтня", 10);
+        MONTH_NAMES.put("листопада", 11);
+        MONTH_NAMES.put("грудня", 12);
+        // Russian genitive
+        MONTH_NAMES.put("января", 1);
+        MONTH_NAMES.put("февраля", 2);
+        MONTH_NAMES.put("марта", 3);
+        MONTH_NAMES.put("апреля", 4);
+        MONTH_NAMES.put("мая", 5);
+        MONTH_NAMES.put("июня", 6);
+        MONTH_NAMES.put("июля", 7);
+        MONTH_NAMES.put("августа", 8);
+        MONTH_NAMES.put("сентября", 9);
+        MONTH_NAMES.put("октября", 10);
+        MONTH_NAMES.put("ноября", 11);
+        MONTH_NAMES.put("декабря", 12);
+        // Romanian
+        MONTH_NAMES.put("ianuarie", 1);
+        MONTH_NAMES.put("februarie", 2);
+        MONTH_NAMES.put("martie", 3);
+        MONTH_NAMES.put("aprilie", 4);
+        MONTH_NAMES.put("mai", 5);
+        MONTH_NAMES.put("iunie", 6);
+        MONTH_NAMES.put("iulie", 7);
+        MONTH_NAMES.put("august", 8);
+        MONTH_NAMES.put("septembrie", 9);
+        MONTH_NAMES.put("octombrie", 10);
+        MONTH_NAMES.put("noiembrie", 11);
+        MONTH_NAMES.put("decembrie", 12);
     }
 
     public static Optional<LocalDateTime> parseOlxDate(String input, LocalDate referenceDate) {
@@ -46,17 +112,17 @@ public class PlUpdatedAtDateParser {
         //  Case: full date (with or without "Odświeżono dnia")
         // ────────────────────────────────
         Matcher dateMatcher = Pattern.compile(
-                "(?:Odświeżono dnia\\s+)?(\\d{1,2})\\s+([a-ząęłńóśźż]+)\\s+(\\d{4})",
+                "(?:(?:Odświeżono dnia|Para o topo a|de)\\s+)?(\\d{1,2})\\s+(?:de\\s+)?([a-ząęłńóśźżçãõáéíóúàâêô\\u0400-\\u04FF]+)\\s+(?:de\\s+)?(\\d{4})",
                 Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CHARACTER_CLASS
         ).matcher(text);
 
         if (dateMatcher.find()) {
             try {
                 int day = Integer.parseInt(dateMatcher.group(1));
-                String monthGen = dateMatcher.group(2).toLowerCase();
+                String monthName = dateMatcher.group(2).toLowerCase();
                 int year = Integer.parseInt(dateMatcher.group(3));
 
-                Integer month = POLISH_GENITIVE_MONTHS.get(monthGen);
+                Integer month = MONTH_NAMES.get(monthName);
                 if (month != null) {
                     return Optional.of(LocalDate.of(year, month, day).atStartOfDay());
                 }
@@ -64,23 +130,37 @@ public class PlUpdatedAtDateParser {
             }
         }
         // ────────────────────────────────
-        //  Case: dzisiaj / Dzisiaj + time
+        //  Case: dzisiaj / Dzisiaj + time  (Polish)
+        //        Сегодня / Сьогодні        (Russian / Ukrainian today)
+        //        Вчера / Вчора             (Russian / Ukrainian yesterday)
+        //        Hoje                      (Portuguese today)
+        //        Ontem                     (Portuguese yesterday)
+        //        azi                       (Romanian today)
+        //        ieri                      (Romanian yesterday)
+        //        днес                      (Bulgarian today)
         // ────────────────────────────────
-        if (lower.contains("dzisiaj")) {
-            // Extract time after last "o" (more reliable than greedy .*)
-            int lastOIndex = lower.lastIndexOf("o");
-            if (lastOIndex >= 0) {
-                String afterO = text.substring(lastOIndex + 1).trim();
-                // Take first HH:mm-like pattern
-                Matcher timeMatcher = Pattern.compile("(\\d{1,2}):(\\d{2})").matcher(afterO);
-                if (timeMatcher.find()) {
-                    try {
-                        int hour = Integer.parseInt(timeMatcher.group(1));
-                        int minute = Integer.parseInt(timeMatcher.group(2));
-                        LocalTime time = LocalTime.of(hour, minute);
-                        return Optional.of(LocalDateTime.of(referenceDate, time));
-                    } catch (DateTimeException | NumberFormatException ignored) {
-                    }
+        boolean isToday = lower.contains("dzisiaj")
+                || lower.contains("сегодня")
+                || lower.contains("сьогодні")
+                || lower.contains("hoje")
+                || lower.contains("azi")
+                || lower.contains("днес");
+        boolean isYesterday = lower.contains("вчера") || lower.contains("вчора")
+                || lower.contains("ontem")
+                || lower.contains("ieri");
+
+        if (isToday || isYesterday) {
+            LocalDate baseDate = isYesterday ? referenceDate.minusDays(1) : referenceDate;
+
+            // Extract time after last preposition: "o" (Polish), "в" (Russian), "о" (Ukrainian)
+            Matcher timeMatcher = Pattern.compile("(\\d{1,2}):(\\d{2})").matcher(text);
+            if (timeMatcher.find()) {
+                try {
+                    int hour = Integer.parseInt(timeMatcher.group(1));
+                    int minute = Integer.parseInt(timeMatcher.group(2));
+                    LocalTime time = LocalTime.of(hour, minute);
+                    return Optional.of(LocalDateTime.of(baseDate, time));
+                } catch (DateTimeException | NumberFormatException ignored) {
                 }
             }
 
@@ -89,13 +169,13 @@ public class PlUpdatedAtDateParser {
                 String tail = text.substring(text.length() - 5).trim();
                 try {
                     LocalTime time = LocalTime.parse(tail, TIME_FMT);
-                    return Optional.of(LocalDateTime.of(referenceDate, time));
+                    return Optional.of(LocalDateTime.of(baseDate, time));
                 } catch (DateTimeParseException ignored) {
                 }
             }
         }
 
-        log.warn("Can't parse updated at date time:{}", input);
+        log.debug("Can't parse updated at date time:{}", input);
         return Optional.empty();
     }
 

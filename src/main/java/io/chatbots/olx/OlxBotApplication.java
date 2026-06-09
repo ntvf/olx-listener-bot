@@ -1,32 +1,46 @@
 package io.chatbots.olx;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.chatbots.olx.checker.RegressionChecker;
 import io.chatbots.olx.grabber.OlxGrabber;
 import io.chatbots.olx.grabber.OlxGrabberImpl;
 import io.chatbots.olx.grabber.parser.BA;
-import io.chatbots.olx.grabber.parser.BR;
-import io.chatbots.olx.grabber.parser.Future;
+import io.chatbots.olx.grabber.parser.OlxPkParser;
 import io.chatbots.olx.grabber.parser.Parser;
 import io.chatbots.olx.grabber.parser.QA;
 import io.chatbots.olx.grabber.parser.bazaraki.BazarakiParser;
 import io.chatbots.olx.i18n.ResourceBundleTranslationService;
 import io.chatbots.olx.i18n.TranslationService;
 import lombok.SneakyThrows;
-import lombok.val;
+import okhttp3.ConnectionPool;
+import okhttp3.Dispatcher;
+import okhttp3.OkHttpClient;
+import org.springframework.aot.hint.annotation.RegisterReflectionForBinding;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.cache.annotation.EnableCaching;
+import org.springframework.context.ApplicationListener;
 import org.springframework.context.annotation.Bean;
 import org.telegram.telegrambots.client.okhttp.OkHttpTelegramClient;
 import org.telegram.telegrambots.longpolling.TelegramBotsLongPollingApplication;
+import org.telegram.telegrambots.meta.TelegramUrl;
+import org.telegram.telegrambots.meta.api.methods.updates.GetUpdates;
+import org.telegram.telegrambots.meta.api.objects.ApiResponse;
+import org.telegram.telegrambots.meta.api.objects.Update;
 import org.telegram.telegrambots.meta.generics.TelegramClient;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 @SpringBootApplication
-@EnableCaching
+@EnableCaching(proxyTargetClass = false)
+@RegisterReflectionForBinding({
+        ApiResponse.class, Update.class
+})
 public class OlxBotApplication {
 
     public static void main(String[] args) {
@@ -34,17 +48,49 @@ public class OlxBotApplication {
     }
 
     @Bean
+    public OlxTelegramBot olxTelegramBot() {
+        return new OlxTelegramBot();
+    }
+
+    @Bean
     @SneakyThrows
-    public OlxTelegramBot olxTelegramBot(
-            @Value("${bot.name}")
-            String botName,
-            @Value("${bot.token}")
-            String botToken
+    public ApplicationListener<ApplicationReadyEvent> telegramBotRegistrar(
+            OlxTelegramBot bot,
+            @Value("${bot.token}") String botToken
     ) {
-        val bot = new OlxTelegramBot();
-        TelegramBotsLongPollingApplication telegramBotsApi = new TelegramBotsLongPollingApplication();
-        telegramBotsApi.registerBot(botToken, bot);
-        return bot;
+        return event -> {
+            try {
+                TelegramBotsLongPollingApplication telegramBotsApi = new TelegramBotsLongPollingApplication(
+                        ObjectMapper::new,
+                        () -> {
+                            Dispatcher dispatcher = new Dispatcher();
+                            dispatcher.setMaxRequests(100);
+                            dispatcher.setMaxRequestsPerHost(100);
+                            return new OkHttpClient.Builder()
+                                    .dispatcher(dispatcher)
+                                    .connectionPool(new ConnectionPool(100, 75, TimeUnit.SECONDS))
+                                    .readTimeout(100, TimeUnit.SECONDS)
+                                    .writeTimeout(70, TimeUnit.SECONDS)
+                                    .connectTimeout(75, TimeUnit.SECONDS)
+                                    .callTimeout(75, TimeUnit.SECONDS)
+                                    .build();
+                        }
+                );
+                telegramBotsApi.registerBot(
+                        botToken,
+                        () -> TelegramUrl.DEFAULT_URL,
+                        offset -> GetUpdates.builder()
+                                .limit(100)
+                                .timeout(50)
+                                .offset(offset + 1)
+                                .allowedUpdates(List.of("message", "callback_query", "my_chat_member"))
+                                .build(),
+                        bot
+                );
+            } catch (Exception e) {
+                throw new RuntimeException("Failed to register Telegram bot", e);
+            }
+        };
     }
 
     @Bean
@@ -70,18 +116,10 @@ public class OlxBotApplication {
                 put("olx.pl", new QA());
                 put("olx.ro", new QA());
                 put("olx.pt", new QA());
-                put("dubizzle.com", new QA());
-                put("olx.com.eg", new QA());
-                put("olx.qa", new QA());
-                put("olx.com.br", new BR());
+
                 put("olx.uz", new QA());
                 put("olx.kz", new QA());
-                put("olx.in", new Future());
-                put("olx.co.za", new Future());
-                put("olx.com.pk", new Future());
-                put("olx.co.id", new Future());
-                put("olx.com.ar", new Future());
-                put("olx.co.cr", new Future());
+                put("olx.com.pk", new OlxPkParser());
                 put("bazaraki.com", new BazarakiParser());
             }
         };

@@ -35,4 +35,15 @@ public class OlxGrabberImpl implements OlxGrabber {
                     return Collections.emptyList();
                 });
     }
+
+    @Override
+    public boolean supportsUrl(String url) {
+        try {
+            String host = new URI(url).getHost();
+            if (host == null) return false;
+            return parsers.keySet().stream().anyMatch(host::contains);
+        } catch (Exception e) {
+            return false;
+        }
+    }
 }

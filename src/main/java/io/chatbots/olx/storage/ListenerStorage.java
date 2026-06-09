@@ -8,5 +8,8 @@ public interface ListenerStorage {
     Listener saveListener(Listener listener);
     List<Listener> getChatListeners(long userId);
     List<Listener> getAllListeners();
-    Listener deleteListener(String listenerId, long chatId);
+
+    Listener deleteListener(long listenerId, long chatId);
+
+    void deactivateChatListeners(long chatId);
 }

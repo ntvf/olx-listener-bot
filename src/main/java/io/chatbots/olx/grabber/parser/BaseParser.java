@@ -1,14 +1,14 @@
 package io.chatbots.olx.grabber.parser;
 
-import com.github.dockerjava.zerodep.shaded.org.apache.hc.core5.net.URIBuilder;
 import lombok.SneakyThrows;
 
-import java.util.Collections;
+import java.net.URI;
 
 public class BaseParser {
 
     @SneakyThrows
     String cleanUrlFromQueryParams(String url) {
-        return new URIBuilder(url).setParameters(Collections.emptyList()).build().toString();
+        URI uri = new URI(url);
+        return new URI(uri.getScheme(), uri.getAuthority(), uri.getPath(), null, null).toString();
     }
 }
