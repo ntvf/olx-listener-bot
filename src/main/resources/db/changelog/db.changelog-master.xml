@@ -9,4 +9,12 @@
         <sqlFile path="schema.sql" relativeToChangelogFile="true"/>
     </changeSet>
 
+    <changeSet id="2" author="tymur">
+        <addColumn tableName="listeners">
+            <column name="score" type="boolean" defaultValueBoolean="false">
+                <constraints nullable="false"/>
+            </column>
+        </addColumn>
+    </changeSet>
+
 </databaseChangeLog>

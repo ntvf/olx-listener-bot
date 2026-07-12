@@ -1,11 +1,19 @@
 # "score" feature — Google AI Mode deal check
 
-Post `score https://www.olx.ua/d/obyavlenie/...` to a chat with the bot and it will:
+Two modes, depending on the URL after the prefix:
 
-1. Scrape the listing (title, price, location, description).
-2. Ask Google Search **AI Mode** whether it's a good deal for a flipper on the same
-   regional market / online, a realistic resale price point, and how liquid the item is.
-3. Post the parsed answer as a follow-up message.
+- `score https://www.olx.ua/d/obyavlenie/...` (a single ad) — scores that listing once.
+- `score https://www.olx.pl/oferty/q-lego/` (a search page) — creates a **listener with
+  AI scoring**: every new offer it finds gets the normal notification, followed by a
+  flip-score summary. Scored listeners show a 🤖 marker in `/listeners`.
+
+Each score means scraping the ad (title, price, location, description) and asking Google
+Search **AI Mode** whether it's a good deal for a flipper on the same regional market /
+online, a realistic resale price point, and how liquid the item is. The parsed answer is
+posted to the chat with a 🔗 link to the ad it belongs to.
+
+Scores run one at a time through a queue capped at 30 pending items (busy searches drop
+excess with a ⚠️ message rather than hammering Google).
 
 There is no menu entry — only people who know the prefix can trigger it. The prefix
 defaults to `score` but **this repo is public, so set your own code word** via

@@ -26,7 +26,8 @@ class CaptchaTunnelServiceTest {
                         + "sleep 30\n");
         CaptchaTunnelService service = service("", script.toString());
         try {
-            assertEquals("https://random-words-1234.trycloudflare.com/vnc.html", service.openAccessUrl());
+            assertEquals("https://random-words-1234.trycloudflare.com/vnc.html?autoconnect=1&resize=scale",
+                    service.openAccessUrl());
         } finally {
             service.close();
         }
@@ -57,6 +58,7 @@ class CaptchaTunnelServiceTest {
         CaptchaTunnelService service = new CaptchaTunnelService();
         set(service, "staticCaptchaUrl", staticUrl);
         set(service, "tunnelCommand", command);
+        set(service, "tunnelReadyWaitSeconds", 0); // don't probe fake URLs over the network
         return service;
     }
 

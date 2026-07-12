@@ -48,7 +48,7 @@ import java.util.concurrent.TimeUnit;
 public class OlxBotApplication {
 
     public static void main(String[] args) {
-        SpringApplication.run(OlxBotApplication.class);
+        SpringApplication.run(OlxBotApplication.class, args);
     }
 
     @Bean

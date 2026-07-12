@@ -56,6 +56,10 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -71,10 +75,14 @@ public class OlxTelegramBot implements LongPollingSingleThreadUpdateConsumer {
     private static final String CB_REMOVE_ABORT = "ra";
     private static final String CB_CLOSE = "cl";
     private static final int MAX_LISTENERS_PER_CHAT = 10;
+    private static final int MAX_QUEUED_SCORES = 30;
+    // path fragments of individual ad pages (vs search/category pages) across supported sites
+    private static final String[] SINGLE_AD_PATH_MARKERS = {"/d/", "/adv/", "/artikal/", "/item/", "/obyavlenie/", "/oferta/"};
     private final ExecutorService updateExecutor = Executors.newCachedThreadPool();
     @Value("${bot.listener.threads:20}")
     private int listenerThreads;
     private ExecutorService executors;
+    private ThreadPoolExecutor scoreExecutor;
 
     @Autowired
     private ListenerStorage listenerStorage;
@@ -117,6 +125,9 @@ public class OlxTelegramBot implements LongPollingSingleThreadUpdateConsumer {
     @PostConstruct
     public void init() {
         executors = Executors.newFixedThreadPool(listenerThreads);
+        // single worker: AI Mode queries are serialized anyway; bounded queue protects Google quota
+        scoreExecutor = new ThreadPoolExecutor(1, 1, 0L, TimeUnit.MILLISECONDS,
+                new LinkedBlockingQueue<>(MAX_QUEUED_SCORES));
         log.info("Listener executor pool size: {}", listenerThreads);
     }
 
@@ -124,6 +135,7 @@ public class OlxTelegramBot implements LongPollingSingleThreadUpdateConsumer {
     public void destroy() {
         executors.shutdown();
         updateExecutor.shutdown();
+        if (scoreExecutor != null) scoreExecutor.shutdown();
     }
 
     @Override
@@ -241,7 +253,9 @@ public class OlxTelegramBot implements LongPollingSingleThreadUpdateConsumer {
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < listeners.size(); i++) {
             if (i > 0) sb.append("\n\n");
-            sb.append(i + 1).append(". ").append(listeners.get(i).getUrl());
+            sb.append(i + 1).append(". ");
+            if (listeners.get(i).isScore()) sb.append("🤖 ");
+            sb.append(listeners.get(i).getUrl());
         }
         return sb.toString();
     }
@@ -349,7 +363,11 @@ public class OlxTelegramBot implements LongPollingSingleThreadUpdateConsumer {
         String raw = getText(update);
         String url = extractUrl(raw);
         if (url == null) return HandleResult.EMPTY;
+        return createListener(update, url, false);
+    }
 
+    @SneakyThrows
+    private HandleResult createListener(Update update, String url, boolean score) {
         long chatId = update.getMessage().getChatId();
         if (!olxGrabber.supportsUrl(url)) {
             return HandleResult.builder().botApiMethod(
@@ -378,19 +396,25 @@ public class OlxTelegramBot implements LongPollingSingleThreadUpdateConsumer {
                 .updated(new Date())
                 .url(url)
                 .active(true)
+                .score(score)
                 .build();
         listenerStorage.saveListener(newListener);
+        String confirmation = translationService.translate("listeners.created", getLocale(update));
+        if (score) {
+            confirmation += "\n🤖 AI flip-score enabled — every new find will be scored.";
+        }
         return HandleResult.builder().botApiMethod(
                 SendMessage.builder()
                         .chatId(chatId)
-                        .text(translationService.translate("listeners.created", getLocale(update)))
+                        .text(confirmation)
                         .build()
         ).build();
     }
 
     /**
-     * Hidden feature: "score https://..." asks Google AI Mode whether the listing is a good flip.
-     * No menu entry on purpose — only people who know the prefix can use it.
+     * Hidden feature, no menu entry — only people who know the prefix can use it.
+     * "score https://<ad-url>" scores one listing; "score https://<search-url>" creates a
+     * listener whose every new find gets an AI flip-score follow-up.
      */
     private HandleResult scoreListing(Update update) {
         String text = getText(update);
@@ -400,6 +424,10 @@ public class OlxTelegramBot implements LongPollingSingleThreadUpdateConsumer {
         }
         String url = extractUrl(text);
         if (url == null) return HandleResult.EMPTY;
+
+        if (!isSingleAdUrl(url) && olxGrabber.supportsUrl(url)) {
+            return createListener(update, url, true);
+        }
 
         long chatId = update.getMessage().getChatId();
         sendPlainText(chatId, "🔎 Checking the deal, this can take a minute or two…");
@@ -411,6 +439,14 @@ public class OlxTelegramBot implements LongPollingSingleThreadUpdateConsumer {
                         .text(summary)
                         .build()
         ).build();
+    }
+
+    private static boolean isSingleAdUrl(String url) {
+        String lower = url.toLowerCase(Locale.ROOT);
+        for (String marker : SINGLE_AD_PATH_MARKERS) {
+            if (lower.contains(marker)) return true;
+        }
+        return false;
     }
 
     private void sendPlainText(long chatId, String text) {
@@ -540,9 +576,30 @@ public class OlxTelegramBot implements LongPollingSingleThreadUpdateConsumer {
         for (Offer offer : toNotify) {
             try {
                 sendNotificationToChat(listener, offer);
+                if (listener.isScore()) {
+                    enqueueScore(listener, offer);
+                }
             } catch (Exception e) {
                 log.warn("Failed to notify offer:{} listener:{}", offer.getUrl(), listener.getId(), e);
             }
+        }
+    }
+
+    private void enqueueScore(Listener listener, Offer offer) {
+        if (!aiScoreEnabled || scoreExecutor == null) return;
+        try {
+            scoreExecutor.submit(() -> {
+                try {
+                    String summary = scoreService.scoreListing(offer.getUrl(),
+                            progress -> sendPlainText(listener.getChatId(), progress));
+                    sendPlainText(listener.getChatId(), summary);
+                } catch (Exception e) {
+                    log.warn("Scoring failed for offer:{}", offer.getUrl(), e);
+                }
+            });
+        } catch (RejectedExecutionException e) {
+            log.warn("Score queue full ({}), skipping offer:{}", MAX_QUEUED_SCORES, offer.getUrl());
+            sendPlainText(listener.getChatId(), "⚠️ AI scoring queue is full, skipped: " + offer.getUrl());
         }
     }
 

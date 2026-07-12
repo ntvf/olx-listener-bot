@@ -73,6 +73,16 @@ class OlxTelegramBotCommandTest {
     private TelegramClient telegramClient;
     @Mock
     private ListenerOfferHashRepository hashRepository;
+    @Mock
+    private io.chatbots.olx.score.ScoreService scoreService;
+
+    private void enableScoring() {
+        org.springframework.test.util.ReflectionTestUtils.setField(bot, "aiScoreEnabled", true);
+        org.springframework.test.util.ReflectionTestUtils.setField(bot, "scorePrefix", "score");
+        org.springframework.test.util.ReflectionTestUtils.setField(bot, "scoreExecutor",
+                new java.util.concurrent.ThreadPoolExecutor(1, 1, 0L, MILLISECONDS,
+                        new java.util.concurrent.LinkedBlockingQueue<>(30)));
+    }
 
     @BeforeEach
     void stubButtonTranslations() {
@@ -275,6 +285,100 @@ class OlxTelegramBotCommandTest {
             ArgumentCaptor<Listener> captor = ArgumentCaptor.forClass(Listener.class);
             verify(listenerStorage).saveListener(captor.capture());
             assertThat(captor.getValue().getUrl()).isEqualTo("https://www.olx.pl/oferty/q-iphone/");
+        });
+    }
+
+    // ── score feature ─────────────────────────────────────────────────────────
+
+    @Test
+    void score_searchUrl_createsListenerWithScoringEnabled() throws Exception {
+        enableScoring();
+        when(olxGrabber.supportsUrl("https://www.olx.pl/oferty/q-lego/")).thenReturn(true);
+        when(translationService.translate(eq("listeners.created"), any(Locale.class))).thenReturn("Saved!");
+        Update update = privateUpdate("score https://www.olx.pl/oferty/q-lego/");
+
+        bot.consume(update);
+
+        await().atMost(2, SECONDS).untilAsserted(() -> {
+            ArgumentCaptor<Listener> captor = ArgumentCaptor.forClass(Listener.class);
+            verify(listenerStorage).saveListener(captor.capture());
+            assertThat(captor.getValue().isScore()).isTrue();
+            assertThat(captor.getValue().getUrl()).isEqualTo("https://www.olx.pl/oferty/q-lego/");
+        });
+    }
+
+    @Test
+    void score_singleAdUrl_runsOneOffScoreWithoutCreatingListener() throws Exception {
+        enableScoring();
+        when(olxGrabber.supportsUrl(anyString())).thenReturn(true);
+        when(scoreService.scoreListing(eq("https://www.olx.pl/d/oferta/lego-ID123.html"), any()))
+                .thenReturn("SUMMARY");
+        Update update = privateUpdate("score https://www.olx.pl/d/oferta/lego-ID123.html");
+
+        bot.consume(update);
+
+        await().atMost(2, SECONDS).untilAsserted(() -> {
+            verify(listenerStorage, never()).saveListener(any());
+            ArgumentCaptor<BotApiMethod> captor = ArgumentCaptor.forClass(BotApiMethod.class);
+            verify(telegramClient, times(2)).execute(captor.capture());
+            assertThat(((SendMessage) captor.getAllValues().get(1)).getText()).isEqualTo("SUMMARY");
+        });
+    }
+
+    @Test
+    void score_disabled_fallsThroughToAddListener() throws Exception {
+        when(olxGrabber.supportsUrl(anyString())).thenReturn(true);
+        when(translationService.translate(eq("listeners.created"), any(Locale.class))).thenReturn("Saved!");
+        Update update = privateUpdate("score https://www.olx.pl/oferty/q-lego/");
+
+        bot.consume(update);
+
+        await().atMost(2, SECONDS).untilAsserted(() -> {
+            ArgumentCaptor<Listener> captor = ArgumentCaptor.forClass(Listener.class);
+            verify(listenerStorage).saveListener(captor.capture());
+            assertThat(captor.getValue().isScore()).isFalse();
+        });
+    }
+
+    @Test
+    void processListener_scoredListener_sendsSummaryAfterNotification() throws Exception {
+        enableScoring();
+        String knownHash = org.apache.commons.codec.digest.DigestUtils.md5Hex("https://old.url");
+        when(hashRepository.findHashesByListenerId(1L)).thenReturn(new HashSet<>(Set.of(knownHash)));
+        when(scoreService.scoreListing(eq("https://www.olx.pl/d/new.html"), any())).thenReturn("SUMMARY");
+
+        Listener listener = Listener.builder()
+                .id(1L).chatId(12345L).url("https://www.olx.pl/oferty/q-lego/")
+                .userLanguageCode("en").score(true).build();
+        Offer newOffer = Offer.builder().url("https://www.olx.pl/d/new.html").name("Lego").build();
+        when(olxGrabber.getOffers(anyString())).thenReturn(List.of(newOffer));
+
+        bot.processListener(listener);
+
+        await().atMost(2, SECONDS).untilAsserted(() -> {
+            ArgumentCaptor<BotApiMethod> captor = ArgumentCaptor.forClass(BotApiMethod.class);
+            verify(telegramClient, times(2)).execute(captor.capture());
+            assertThat(((SendMessage) captor.getAllValues().get(1)).getText()).isEqualTo("SUMMARY");
+        });
+    }
+
+    @Test
+    void processListener_unscoredListener_noSummary() throws Exception {
+        enableScoring();
+        String knownHash = org.apache.commons.codec.digest.DigestUtils.md5Hex("https://old.url");
+        when(hashRepository.findHashesByListenerId(1L)).thenReturn(new HashSet<>(Set.of(knownHash)));
+
+        Listener listener = Listener.builder()
+                .id(1L).chatId(12345L).url("https://www.olx.pl/oferty/q-lego/")
+                .userLanguageCode("en").score(false).build();
+        Offer newOffer = Offer.builder().url("https://www.olx.pl/d/new.html").name("Lego").build();
+        when(olxGrabber.getOffers(anyString())).thenReturn(List.of(newOffer));
+
+        bot.processListener(listener);
+
+        await().during(300, MILLISECONDS).atMost(1, SECONDS).untilAsserted(() -> {
+            verify(telegramClient, times(1)).execute(any(BotApiMethod.class));
+            verify(scoreService, never()).scoreListing(anyString(), any());
         });
     }
 

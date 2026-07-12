@@ -99,6 +99,8 @@ public class ScoreService {
             sb.append(" — ").append(listing.getPrice());
         }
         sb.append("\n\n").append(StringUtils.abbreviate(answer, MAX_ANSWER_CHARS));
+        // several scores can queue up behind one another; make clear which ad this belongs to
+        sb.append("\n\n🔗 ").append(listing.getUrl());
         return sb.toString();
     }
 }

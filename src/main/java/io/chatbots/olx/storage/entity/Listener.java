@@ -44,4 +44,7 @@ public class Listener {
     private Date updated;
 
     private boolean active;
+
+    /** when true, every new offer found by this listener gets an AI flip-score follow-up */
+    private boolean score;
 }

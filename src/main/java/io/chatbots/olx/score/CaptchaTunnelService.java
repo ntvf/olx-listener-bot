@@ -7,6 +7,11 @@ import org.springframework.beans.factory.annotation.Value;
 import jakarta.annotation.PreDestroy;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
@@ -33,6 +38,9 @@ public class CaptchaTunnelService {
     private String staticCaptchaUrl;
     @Value("${ai.score.tunnel-command:cloudflared tunnel --url http://localhost:6080 --no-autoupdate}")
     private String tunnelCommand;
+    // DNS for a fresh trycloudflare subdomain can lag 1-2 min; don't post a link that 404s
+    @Value("${ai.score.tunnel-ready-wait-seconds:120}")
+    private int tunnelReadyWaitSeconds;
 
     private Process tunnelProcess;
 
@@ -56,7 +64,10 @@ public class CaptchaTunnelService {
             }
             drainAsync(output);
             log.info("Captcha tunnel opened: {}", url);
-            return url + "/vnc.html";
+            // autoconnect + scale-to-fit so the remote screen is usable on a phone
+            String accessUrl = url + "/vnc.html?autoconnect=1&resize=scale";
+            waitUntilReachable(accessUrl);
+            return accessUrl;
         } catch (Exception e) {
             log.warn("Failed to open captcha tunnel with command '{}'", tunnelCommand, e);
             close();
@@ -71,6 +82,39 @@ public class CaptchaTunnelService {
             tunnelProcess.destroy();
             tunnelProcess = null;
         }
+    }
+
+    /** Poll the public URL until Cloudflare's edge serves it, so the chat link works on first tap. */
+    private void waitUntilReachable(String url) {
+        if (tunnelReadyWaitSeconds <= 0) return;
+        long deadline = System.currentTimeMillis() + tunnelReadyWaitSeconds * 1000L;
+        HttpClient client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
+        HttpRequest request = HttpRequest.newBuilder(URI.create(url))
+                .timeout(Duration.ofSeconds(8))
+                .GET()
+                .build();
+        while (System.currentTimeMillis() < deadline) {
+            try {
+                HttpResponse<Void> response = client.send(request, HttpResponse.BodyHandlers.discarding());
+                if (response.statusCode() == 200) {
+                    log.info("Captcha tunnel is publicly reachable");
+                    return;
+                }
+                log.debug("Tunnel not ready yet, status {}", response.statusCode());
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            } catch (Exception e) {
+                log.debug("Tunnel not ready yet: {}", e.toString());
+            }
+            try {
+                Thread.sleep(3000);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+        }
+        log.warn("Tunnel URL still not reachable after {}s, posting it anyway", tunnelReadyWaitSeconds);
     }
 
     private String scanForUrl(BufferedReader output) {
