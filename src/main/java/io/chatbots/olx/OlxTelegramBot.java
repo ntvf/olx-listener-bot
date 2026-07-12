@@ -4,6 +4,7 @@ import io.chatbots.olx.checker.RegressionChecker;
 import io.chatbots.olx.grabber.Offer;
 import io.chatbots.olx.grabber.OlxGrabber;
 import io.chatbots.olx.i18n.TranslationService;
+import io.chatbots.olx.score.ScoreService;
 import io.chatbots.olx.stats.BotStatsService;
 import io.chatbots.olx.stats.UserLocaleStats;
 import io.chatbots.olx.storage.ListenerOfferHashRepository;
@@ -89,6 +90,13 @@ public class OlxTelegramBot implements LongPollingSingleThreadUpdateConsumer {
     private TelegramClient telegramClient;
     @Autowired
     private ListenerOfferHashRepository hashRepository;
+    @Autowired
+    private ScoreService scoreService;
+    @Value("${ai.score.enabled:true}")
+    private boolean aiScoreEnabled;
+    // the "code word" gating the score feature; deployments should override the default
+    @Value("${ai.score.prefix:score}")
+    private String scorePrefix;
 
     private static String extractUrl(String text) {
         if (text == null) return null;
@@ -150,6 +158,7 @@ public class OlxTelegramBot implements LongPollingSingleThreadUpdateConsumer {
                 handlers.add(execute(this::start, update, true));
                 handlers.add(execute(this::listListeners, update, true));
                 handlers.add(execute(this::stats, update, true));
+                handlers.add(execute(this::scoreListing, update, true));
                 handlers.add(execute(this::unknownCommand, update, true));
                 if (Optional.ofNullable(update.getMessage().getEntities())
                         .orElse(Collections.emptyList())
@@ -241,6 +250,8 @@ public class OlxTelegramBot implements LongPollingSingleThreadUpdateConsumer {
         List<BooleanSupplier> handlers = new ArrayList<>();
         handlers.add(execute(this::start, update, true));
         handlers.add(execute(this::listListeners, update, true));
+        // must run before addListener, which would otherwise register the scored URL as a listener
+        handlers.add(execute(this::scoreListing, update, true));
         handlers.add(execute(this::addListener, update, true));
         handlers.add(execute(this::stats, update, true));
         handlers.add(execute(this::unknownCommand, update, true));
@@ -375,6 +386,39 @@ public class OlxTelegramBot implements LongPollingSingleThreadUpdateConsumer {
                         .text(translationService.translate("listeners.created", getLocale(update)))
                         .build()
         ).build();
+    }
+
+    /**
+     * Hidden feature: "score https://..." asks Google AI Mode whether the listing is a good flip.
+     * No menu entry on purpose — only people who know the prefix can use it.
+     */
+    private HandleResult scoreListing(Update update) {
+        String text = getText(update);
+        if (!aiScoreEnabled || text == null
+                || !text.toLowerCase(Locale.ROOT).startsWith(scorePrefix.toLowerCase(Locale.ROOT) + " http")) {
+            return HandleResult.EMPTY;
+        }
+        String url = extractUrl(text);
+        if (url == null) return HandleResult.EMPTY;
+
+        long chatId = update.getMessage().getChatId();
+        sendPlainText(chatId, "🔎 Checking the deal, this can take a minute or two…");
+        // Blocking is fine here: we're on the updateExecutor pool, and AI queries are serialized anyway
+        String summary = scoreService.scoreListing(url, progress -> sendPlainText(chatId, progress));
+        return HandleResult.builder().botApiMethod(
+                SendMessage.builder()
+                        .chatId(chatId)
+                        .text(summary)
+                        .build()
+        ).build();
+    }
+
+    private void sendPlainText(long chatId, String text) {
+        try {
+            telegramClient.execute(SendMessage.builder().chatId(chatId).text(text).build());
+        } catch (TelegramApiException e) {
+            log.warn("Failed to send message to chat:{}", chatId, e);
+        }
     }
 
     private HandleResult listListeners(Update update) {

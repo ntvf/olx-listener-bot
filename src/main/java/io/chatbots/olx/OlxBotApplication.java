@@ -11,6 +11,10 @@ import io.chatbots.olx.grabber.parser.QA;
 import io.chatbots.olx.grabber.parser.bazaraki.BazarakiParser;
 import io.chatbots.olx.i18n.ResourceBundleTranslationService;
 import io.chatbots.olx.i18n.TranslationService;
+import io.chatbots.olx.score.AiModeSearchService;
+import io.chatbots.olx.score.CaptchaTunnelService;
+import io.chatbots.olx.score.ListingScraper;
+import io.chatbots.olx.score.ScoreService;
 import lombok.SneakyThrows;
 import okhttp3.ConnectionPool;
 import okhttp3.Dispatcher;
@@ -125,6 +129,28 @@ public class OlxBotApplication {
         };
     }
 
+
+    @Bean
+    public ListingScraper listingScraper() {
+        return new ListingScraper();
+    }
+
+    @Bean
+    public AiModeSearchService aiModeSearchService() {
+        return new AiModeSearchService();
+    }
+
+    @Bean
+    public CaptchaTunnelService captchaTunnelService() {
+        return new CaptchaTunnelService();
+    }
+
+    @Bean
+    public ScoreService scoreService(ListingScraper listingScraper,
+                                     AiModeSearchService aiModeSearchService,
+                                     CaptchaTunnelService captchaTunnelService) {
+        return new ScoreService(listingScraper, aiModeSearchService, captchaTunnelService);
+    }
 
     @Bean
     public TranslationService translationService() {
