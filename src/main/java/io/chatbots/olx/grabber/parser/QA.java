@@ -56,7 +56,7 @@ public class QA extends BaseParser implements Parser {
 
     private LocalDateTime getUpdatedAt(Element card) {
         try {
-            String raw = card.select("p[data-testid=location-date]").text();
+            String raw = card.select("[data-testid=location-date]").text();
             String[] parts = raw.split(" - ");
             // skip [0] (city/location), try remaining segments for a parseable date
             for (int i = 1; i < parts.length; i++) {
@@ -84,11 +84,17 @@ public class QA extends BaseParser implements Parser {
                     .get().body();
             String baseUrl = url.endsWith("/") ? url.substring(0, url.length() - 1) : url;
 
-            return body.getElementsByAttributeValue("data-cy", "l-card").stream()
+            // markup varies by site: pl/bg/ro/pt use a[data-testid=card-title-link],
+            // ua only marks cards with data-testid=l-card, uz/kz still use data-cy=ad-card-title
+            return body.select("[data-cy=l-card], [data-testid=l-card]").stream()
                     .map(card -> {
-                        String name = card.select("[data-cy=ad-card-title] h4").text();
+                        Element linkElement = card.selectFirst(
+                                "a[data-testid=card-title-link], [data-cy=ad-card-title] a[href], [data-testid=ad-card-title] a[href]");
+                        String name = linkElement != null ? linkElement.text() : "";
+                        if (name.isEmpty()) {
+                            name = card.select("[data-cy=ad-card-title] h4").text();
+                        }
 
-                        Element linkElement = card.selectFirst("[data-cy=ad-card-title] a[href]");
                         String link = linkElement != null ? linkElement.attr("href") : "";
 
                         if (link.isEmpty()) {
