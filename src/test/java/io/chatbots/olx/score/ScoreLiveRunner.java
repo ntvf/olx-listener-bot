@@ -1,6 +1,7 @@
 package io.chatbots.olx.score;
 
 import java.lang.reflect.Field;
+import java.util.Locale;
 import java.util.function.Consumer;
 
 /**
@@ -23,13 +24,17 @@ public class ScoreLiveRunner {
         set(tunnelService, "staticCaptchaUrl", "");
         set(tunnelService, "tunnelCommand", "cloudflared tunnel --url http://localhost:6080 --no-autoupdate");
 
-        ScoreService scoreService = new ScoreService(new ListingScraper(), searchService, tunnelService);
+        ScoreService scoreService = new ScoreService(
+                new ListingScraper(), searchService, tunnelService, new MarketPriceParser());
+        set(scoreService, "buyMargin", 0.4d);
+
+        Locale locale = Locale.forLanguageTag(args.length > 1 ? args[1] : "uk");
 
         ListingInfo listing = new ListingScraper().scrape(url);
         System.out.println("=== SCRAPED ===\n" + listing);
 
         Consumer<String> notifier = msg -> System.out.println("=== PROGRESS ===\n" + msg);
-        System.out.println("=== SUMMARY ===\n" + scoreService.scoreListing(url, notifier));
+        System.out.println("=== SUMMARY ===\n" + scoreService.scoreListing(url, locale, notifier));
     }
 
     private static void set(Object target, String field, Object value) throws Exception {

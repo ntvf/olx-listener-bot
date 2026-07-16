@@ -311,7 +311,7 @@ class OlxTelegramBotCommandTest {
     void score_singleAdUrl_runsOneOffScoreWithoutCreatingListener() throws Exception {
         enableScoring();
         when(olxGrabber.supportsUrl(anyString())).thenReturn(true);
-        when(scoreService.scoreListing(eq("https://www.olx.pl/d/oferta/lego-ID123.html"), any()))
+        when(scoreService.scoreListing(eq("https://www.olx.pl/d/oferta/lego-ID123.html"), any(), any()))
                 .thenReturn("SUMMARY");
         Update update = privateUpdate("score https://www.olx.pl/d/oferta/lego-ID123.html");
 
@@ -345,7 +345,7 @@ class OlxTelegramBotCommandTest {
         enableScoring();
         String knownHash = org.apache.commons.codec.digest.DigestUtils.md5Hex("https://old.url");
         when(hashRepository.findHashesByListenerId(1L)).thenReturn(new HashSet<>(Set.of(knownHash)));
-        when(scoreService.scoreListing(eq("https://www.olx.pl/d/new.html"), any())).thenReturn("SUMMARY");
+        when(scoreService.scoreListing(eq("https://www.olx.pl/d/new.html"), any(), any())).thenReturn("SUMMARY");
 
         Listener listener = Listener.builder()
                 .id(1L).chatId(12345L).url("https://www.olx.pl/oferty/q-lego/")
@@ -378,7 +378,7 @@ class OlxTelegramBotCommandTest {
 
         await().during(300, MILLISECONDS).atMost(1, SECONDS).untilAsserted(() -> {
             verify(telegramClient, times(1)).execute(any(BotApiMethod.class));
-            verify(scoreService, never()).scoreListing(anyString(), any());
+            verify(scoreService, never()).scoreListing(anyString(), any(), any());
         });
     }
 

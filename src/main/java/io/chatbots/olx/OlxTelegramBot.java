@@ -432,7 +432,7 @@ public class OlxTelegramBot implements LongPollingSingleThreadUpdateConsumer {
         long chatId = update.getMessage().getChatId();
         sendPlainText(chatId, "🔎 Checking the deal, this can take a minute or two…");
         // Blocking is fine here: we're on the updateExecutor pool, and AI queries are serialized anyway
-        String summary = scoreService.scoreListing(url, progress -> sendPlainText(chatId, progress));
+        String summary = scoreService.scoreListing(url, getLocale(update), progress -> sendPlainText(chatId, progress));
         return HandleResult.builder().botApiMethod(
                 SendMessage.builder()
                         .chatId(chatId)
@@ -591,6 +591,7 @@ public class OlxTelegramBot implements LongPollingSingleThreadUpdateConsumer {
             scoreExecutor.submit(() -> {
                 try {
                     String summary = scoreService.scoreListing(offer.getUrl(),
+                            getLocale(listener.getUserLanguageCode()),
                             progress -> sendPlainText(listener.getChatId(), progress));
                     sendPlainText(listener.getChatId(), summary);
                 } catch (Exception e) {

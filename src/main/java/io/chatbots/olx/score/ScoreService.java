@@ -2,36 +2,54 @@ package io.chatbots.olx.score;
 
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.beans.factory.annotation.Value;
 
+import java.net.URI;
+import java.util.Locale;
 import java.util.function.Consumer;
 
 /**
- * Orchestrates the "score" feature: scrape the listing, ask Google AI Mode whether it is a good
- * flip on the same regional market, and format a compact Telegram summary.
+ * Orchestrates the "score" feature: scrape the listing, ask Google AI Mode what comparable units
+ * currently sell for, and turn that into a buy/pass verdict.
+ * <p>
+ * The model is deliberately only asked to <em>retrieve comparables</em> — the verdict and the
+ * margin are computed here. Asking an LLM "is this a good deal?" while handing it the asking price
+ * anchors its estimate on that price and makes it do arithmetic it is unreliable at; asking "what
+ * do these sell for?" plays to what search-grounded models are actually good at.
  */
 @Slf4j
 public class ScoreService {
 
     private static final int MAX_DESCRIPTION_CHARS = 400;
     private static final int MAX_ANSWER_CHARS = 3500;
+    /** below this, the answer is a guess dressed up as data rather than a price signal */
+    private static final int MIN_COMPARABLES = 3;
 
     private final ListingScraper listingScraper;
     private final AiModeSearchService aiModeSearchService;
     private final CaptchaTunnelService captchaTunnelService;
+    private final MarketPriceParser marketPriceParser;
+
+    /** Resale headroom over the asking price needed for a BUY, e.g. 0.4 = comps at least 40% above. */
+    @Value("${ai.score.buy-margin:0.4}")
+    private double buyMargin;
 
     public ScoreService(ListingScraper listingScraper,
                         AiModeSearchService aiModeSearchService,
-                        CaptchaTunnelService captchaTunnelService) {
+                        CaptchaTunnelService captchaTunnelService,
+                        MarketPriceParser marketPriceParser) {
         this.listingScraper = listingScraper;
         this.aiModeSearchService = aiModeSearchService;
         this.captchaTunnelService = captchaTunnelService;
+        this.marketPriceParser = marketPriceParser;
     }
 
     /**
+     * @param locale           language for the answer — the user's, from their Telegram profile
      * @param progressNotifier receives intermediate user-facing messages (e.g. the CAPTCHA link)
      * @return the summary message to post to the chat
      */
-    public String scoreListing(String listingUrl, Consumer<String> progressNotifier) {
+    public String scoreListing(String listingUrl, Locale locale, Consumer<String> progressNotifier) {
         ListingInfo listing;
         try {
             listing = listingScraper.scrape(listingUrl);
@@ -43,8 +61,9 @@ public class ScoreService {
             return "❌ Could not extract any data from this listing.";
         }
 
-        String query = buildQuery(listing);
-        log.info("Scoring listing '{}' ({}), query length {}", listing.getTitle(), listing.getPrice(), query.length());
+        String query = buildQuery(listing, locale);
+        log.info("Scoring listing '{}' ({}) on {}, answer in {}",
+                listing.getTitle(), listing.getPrice(), marketOf(listing.getUrl()), locale.getLanguage());
 
         String answer;
         try {
@@ -58,25 +77,43 @@ public class ScoreService {
         return formatSummary(listing, answer);
     }
 
-    private String buildQuery(ListingInfo listing) {
+    /**
+     * Grounds the query on the marketplace the ad lives on (the model cannot infer it — the scraped
+     * location is often null) while answering in the user's own language. The asking price is left
+     * out on purpose: including it anchors the estimate.
+     */
+    private String buildQuery(ListingInfo listing, Locale locale) {
+        String market = marketOf(listing.getUrl());
         StringBuilder query = new StringBuilder();
-        query.append("I am a reseller (flipper). Second-hand listing for sale");
+        query.append("Second-hand listing on ").append(market);
         if (listing.getLocation() != null) {
             query.append(" in ").append(listing.getLocation());
         }
-        query.append(": \"").append(listing.getTitle()).append("\"");
-        if (listing.getPrice() != null) {
-            query.append(", asking price ").append(listing.getPrice());
-        }
+        query.append(". Title: \"").append(listing.getTitle()).append("\"");
         if (listing.getDescription() != null) {
-            query.append(". Details: ").append(StringUtils.abbreviate(listing.getDescription(), MAX_DESCRIPTION_CHARS));
+            query.append(". Condition details: ")
+                    .append(StringUtils.abbreviate(listing.getDescription(), MAX_DESCRIPTION_CHARS));
         }
-        query.append(". Based on current prices for the same item on the same second-hand market")
-                .append(" and online stores in the same region, answer briefly (under 120 words) with exactly:")
-                .append(" 1) Is this a good deal to buy for resale?")
-                .append(" 2) A realistic resale price point.")
-                .append(" 3) How liquid is it — how fast does this item usually sell?");
+        query.append(". What do comparable used units of this exact item currently sell for on ")
+                .append(market).append(" and other second-hand markets in the same region?")
+                .append(" Answer in ").append(locale.getDisplayLanguage(Locale.ENGLISH))
+                .append(" with exactly these three lines and nothing else:")
+                .append(" RANGE: <low>-<high> <currency>")
+                .append(" COMPS: <how many comparable listings you found>")
+                .append(" NOTE: <one sentence on condition caveats and how fast this item usually sells>.")
+                .append(" If you found fewer than ").append(MIN_COMPARABLES)
+                .append(" comparable listings, reply \"COMPS: 0\" and omit RANGE rather than estimating.");
         return query.toString();
+    }
+
+    /** e.g. "https://www.olx.pl/d/oferta/..." -> "olx.pl" */
+    private String marketOf(String url) {
+        try {
+            String host = URI.create(url).getHost();
+            return host == null ? "OLX" : StringUtils.removeStart(host, "www.");
+        } catch (Exception e) {
+            return "OLX";
+        }
     }
 
     private String buildCaptchaMessage(AiModeSearchService.CaptchaEvent captcha) {
@@ -94,13 +131,57 @@ public class ScoreService {
 
     private String formatSummary(ListingInfo listing, String answer) {
         StringBuilder sb = new StringBuilder();
-        sb.append("💰 Flip check: ").append(listing.getTitle());
-        if (listing.getPrice() != null) {
-            sb.append(" — ").append(listing.getPrice());
-        }
-        sb.append("\n\n").append(StringUtils.abbreviate(answer, MAX_ANSWER_CHARS));
+        sb.append(buildVerdict(listing, answer));
         // several scores can queue up behind one another; make clear which ad this belongs to
         sb.append("\n\n🔗 ").append(listing.getUrl());
         return sb.toString();
+    }
+
+    private String buildVerdict(ListingInfo listing, String answer) {
+        MarketPrice market = marketPriceParser.parse(answer);
+        if (market == null) {
+            // AI Mode ignored the format; the prose is still worth reading, so don't drop it
+            log.info("AI answer did not match the RANGE/COMPS format, posting it raw");
+            return "💰 " + listing.getTitle()
+                    + priceSuffix(listing)
+                    + "\n\n" + StringUtils.abbreviate(answer, MAX_ANSWER_CHARS);
+        }
+
+        String header = "💰 " + listing.getTitle() + priceSuffix(listing);
+        if (market.getComparables() < MIN_COMPARABLES) {
+            return header + "\n\n🤷 Not enough comparable listings to price this one"
+                    + note(market);
+        }
+
+        String range = formatAmount(market.getLow()) + "–" + formatAmount(market.getHigh())
+                + (market.getCurrency() == null ? "" : " " + market.getCurrency());
+        Double ask = marketPriceParser.parseListingPrice(listing.getPrice());
+        if (ask == null || ask <= 0) {
+            return header + "\n\n📊 Comparable units sell for " + range
+                    + " (" + market.getComparables() + " comps)"
+                    + "\n🤷 No asking price on the ad, so no verdict." + note(market);
+        }
+
+        // conservative: judge against the bottom of the range, not the optimistic end
+        double margin = (market.getLow() - ask) / ask;
+        String verdict = margin >= buyMargin ? "✅ BUY" : "⛔ PASS";
+        return header
+                + "\n\n" + verdict + " — " + Math.round(margin * 100) + "% headroom vs the low end"
+                + "\n📊 Comparable units sell for " + range + " (" + market.getComparables() + " comps)"
+                + note(market);
+    }
+
+    private String priceSuffix(ListingInfo listing) {
+        return listing.getPrice() == null ? "" : " — " + listing.getPrice();
+    }
+
+    private String note(MarketPrice market) {
+        return market.getNote() == null ? "" : "\nℹ️ " + market.getNote();
+    }
+
+    private String formatAmount(double amount) {
+        return amount == Math.rint(amount)
+                ? String.valueOf((long) amount)
+                : String.format(Locale.ROOT, "%.2f", amount);
     }
 }

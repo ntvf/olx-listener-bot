@@ -14,6 +14,7 @@ import io.chatbots.olx.i18n.TranslationService;
 import io.chatbots.olx.score.AiModeSearchService;
 import io.chatbots.olx.score.CaptchaTunnelService;
 import io.chatbots.olx.score.ListingScraper;
+import io.chatbots.olx.score.MarketPriceParser;
 import io.chatbots.olx.score.ScoreService;
 import lombok.SneakyThrows;
 import okhttp3.ConnectionPool;
@@ -146,10 +147,16 @@ public class OlxBotApplication {
     }
 
     @Bean
+    public MarketPriceParser marketPriceParser() {
+        return new MarketPriceParser();
+    }
+
+    @Bean
     public ScoreService scoreService(ListingScraper listingScraper,
                                      AiModeSearchService aiModeSearchService,
-                                     CaptchaTunnelService captchaTunnelService) {
-        return new ScoreService(listingScraper, aiModeSearchService, captchaTunnelService);
+                                     CaptchaTunnelService captchaTunnelService,
+                                     MarketPriceParser marketPriceParser) {
+        return new ScoreService(listingScraper, aiModeSearchService, captchaTunnelService, marketPriceParser);
     }
 
     @Bean
