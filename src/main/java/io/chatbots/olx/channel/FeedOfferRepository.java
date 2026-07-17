@@ -21,4 +21,9 @@ public interface FeedOfferRepository extends JpaRepository<FeedOffer, Long> {
             long feedId, Instant since);
 
     long countBySellerIdAndFirstSeenAfter(String sellerId, Instant since);
+
+    long countBySellerId(String sellerId);
+
+    @Query("SELECT MIN(o.firstSeen) FROM FeedOffer o WHERE o.sellerId = :sellerId")
+    Instant findEarliestFirstSeenBySellerId(@Param("sellerId") String sellerId);
 }

@@ -1,6 +1,7 @@
 package io.chatbots.olx.channel;
 
 import java.text.Normalizer;
+import java.time.Duration;
 import java.util.List;
 import java.util.Locale;
 
@@ -81,14 +82,25 @@ public final class AgencyDetector {
     private static final int MAX_PRIVATE_LISTINGS_90D = 6;
 
     /**
+     * How long a keyword-less private seller must have been in our history before their listings
+     * are trusted as owner-posted on their own. An agency posts continuously; a genuine owner we
+     * have tracked this long while they stayed at a listing or two is behaving like an owner.
+     */
+    private static final Duration MIN_OWNER_TENURE = Duration.ofDays(150);
+
+    /** ...and "stayed at a listing or two" means no more than this many prior listings, ever. */
+    private static final long MAX_TENURE_LISTINGS = 2;
+
+    /**
      * Per-seller listing counts over three rolling windows, drawn from our own feed_offers
      * history (not OLX's live count, which churn keeps low). Counts are the seller's prior
      * listings; the offer being classified is not yet stored, so a fresh owner posting their
-     * first flat scores 0/0/0.
+     * first flat scores 0/0/0. {@code knownFor} is the span since we first saw this seller
+     * ({@link Duration#ZERO} when unseen), and {@code listingsTotal} their prior listing count.
      */
     public record SellerActivity(long listingsLast7Days, long listingsLast30Days,
-                                 long listingsLast90Days) {
-        public static final SellerActivity NONE = new SellerActivity(0, 0, 0);
+                                 long listingsLast90Days, Duration knownFor, long listingsTotal) {
+        public static final SellerActivity NONE = new SellerActivity(0, 0, 0, Duration.ZERO, 0);
     }
 
     private AgencyDetector() {
@@ -103,6 +115,9 @@ public final class AgencyDetector {
         if (activity.listingsLast90Days() > MAX_PRIVATE_LISTINGS_90D) return Verdict.AGENCY;
 
         String text = fold((title == null ? "" : title) + " " + (description == null ? "" : description));
+        // Presence of an owner phrase is a positive publish signal; capture it before the same
+        // stems are stripped so they cannot trip the agency stems ("bez prowizji" vs "prowizj").
+        boolean ownerSignal = OWNER_STEMS.stream().anyMatch(text::contains);
         for (String stem : OWNER_STEMS) {
             text = text.replace(stem, " ");
         }
@@ -117,7 +132,15 @@ public final class AgencyDetector {
         }
         if (weakHits >= 2) return Verdict.AGENCY;
         if (weakHits == 1) return Verdict.LIKELY_AGENCY;
-        return Verdict.OWNER;
+
+        // No agency tell found. For a no-commission channel we favour precision over recall:
+        // publish only listings that positively read as owner-posted — an explicit owner phrase,
+        // or a seller we have tracked as low-volume private for long enough to trust. Everything
+        // else is held back as LIKELY_AGENCY (not shown) rather than published on absence of proof.
+        boolean establishedPrivate = activity.knownFor().compareTo(MIN_OWNER_TENURE) >= 0
+                && activity.listingsTotal() <= MAX_TENURE_LISTINGS;
+        if (ownerSignal || establishedPrivate) return Verdict.OWNER;
+        return Verdict.LIKELY_AGENCY;
     }
 
     /**

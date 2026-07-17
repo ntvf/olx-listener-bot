@@ -4,13 +4,20 @@ import io.chatbots.olx.channel.AgencyDetector.SellerActivity;
 import io.chatbots.olx.channel.AgencyDetector.Verdict;
 import org.junit.jupiter.api.Test;
 
+import java.time.Duration;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class AgencyDetectorTest {
 
-    /** listings(last7Days, last30Days, last90Days) */
+    /** listings(last7Days, last30Days, last90Days) — a seller with no meaningful tenure yet. */
     private static SellerActivity listings(long last7, long last30, long last90) {
-        return new SellerActivity(last7, last30, last90);
+        return new SellerActivity(last7, last30, last90, Duration.ZERO, last90);
+    }
+
+    /** A seller we have tracked for {@code months} while they posted {@code total} prior listings. */
+    private static SellerActivity tenured(int months, long total) {
+        return new SellerActivity(0, 0, 0, Duration.ofDays(months * 30L), total);
     }
 
     // --- seller / activity signals -------------------------------------------------
@@ -135,17 +142,46 @@ class AgencyDetectorTest {
                 AgencyDetector.classify("2 pokoje Wola", "Nasza agencja pobiera prowizję", false, SellerActivity.NONE));
     }
 
-    // --- defaults / safety ---------------------------------------------------------
+    // --- publish policy: precision over recall -------------------------------------
 
     @Test
-    void plainListingDefaultsToOwner() {
-        assertEquals(Verdict.OWNER,
+    void plainListingWithoutOwnerSignalIsHeldBack() {
+        // no agency tell, but no positive owner signal either — not published to a no-commission channel
+        assertEquals(Verdict.LIKELY_AGENCY,
                 AgencyDetector.classify("Mieszkanie 3 pokoje Ursynów", "Wynajmę mieszkanie od zaraz", false, SellerActivity.NONE));
     }
 
     @Test
-    void nullsAreSafe() {
-        assertEquals(Verdict.OWNER, AgencyDetector.classify(null, null, null, null));
+    void explicitOwnerPhrasePublishes() {
+        assertEquals(Verdict.OWNER,
+                AgencyDetector.classify("Mieszkanie 3 pokoje Ursynów", "Wynajmę od właściciela, od zaraz", false, SellerActivity.NONE));
+    }
+
+    @Test
+    void longTrackedLowVolumePrivateSellerBecomesOwner() {
+        // no keyword, but tracked 6 months with a single prior listing — behaves like an owner
+        assertEquals(Verdict.OWNER,
+                AgencyDetector.classify("Mieszkanie 2 pokoje", "Wynajmę od zaraz", false, tenured(6, 1)));
+    }
+
+    @Test
+    void recentKeywordlessPrivateSellerIsHeldBack() {
+        // known only a month — too early to trust without a keyword
+        assertEquals(Verdict.LIKELY_AGENCY,
+                AgencyDetector.classify("Mieszkanie 2 pokoje", "Wynajmę od zaraz", false, tenured(1, 1)));
+    }
+
+    @Test
+    void longTrackedButManyListingsNotTrusted() {
+        // tracked long enough, but a steady stream of listings is not owner behaviour
+        assertEquals(Verdict.LIKELY_AGENCY,
+                AgencyDetector.classify("Mieszkanie 2 pokoje", "Wynajmę od zaraz", false, tenured(6, 5)));
+    }
+
+    @Test
+    void nullsAreHeldBack() {
+        // an empty listing carries no owner signal, so it is not published
+        assertEquals(Verdict.LIKELY_AGENCY, AgencyDetector.classify(null, null, null, null));
     }
 
     @Test

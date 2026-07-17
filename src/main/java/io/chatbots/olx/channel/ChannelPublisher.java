@@ -33,7 +33,7 @@ public class ChannelPublisher {
     static final Duration COMPARABLES_WINDOW = Duration.ofDays(30);
 
     /** Text CTA kept in the caption itself so it survives screenshots and copy-paste. */
-    private static final String SUBSCRIBE_CTA = "нові квартири без комісії · więcej mieszkań";
+    private static final String SUBSCRIBE_CTA = "квартири без комісії · больше квартир";
     /** Label of the inline URL button that deep-links back to the channel. */
     private static final String SUBSCRIBE_BUTTON = "📢 Більше квартир →";
 

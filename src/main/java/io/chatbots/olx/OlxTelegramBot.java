@@ -306,13 +306,17 @@ public class OlxTelegramBot implements LongPollingSingleThreadUpdateConsumer {
 
     private String getText(Update update) {
         val initial = update.getMessage().getText();
+        // Only strip a mention that leads the message (addressing the bot in a group, e.g.
+        // "@this_bot score <url>"). A mention elsewhere is a real argument — notably the
+        // channel handle in "/link @channel <url>" — and must be left intact.
         return Optional.ofNullable(update.getMessage().getEntities())
                 .orElse(Collections.emptyList())
                 .stream()
                 .filter(it -> "mention".equals(it.getType()))
+                .filter(it -> it.getOffset() != null && it.getOffset() == 0)
                 .findFirst()
                 .map(MessageEntity::getText)
-                .map(it -> StringUtils.strip(initial.replace(it, "")))
+                .map(it -> StringUtils.strip(initial.substring(it.length())))
                 .orElse(initial);
     }
 
@@ -487,8 +491,7 @@ public class OlxTelegramBot implements LongPollingSingleThreadUpdateConsumer {
 
     private HandleResult listListeners(Update update) {
         String text = getText(update);
-        String menuLabel = "📋 " + translationService.translate("menu.listeners", getLocale(update));
-        if (!LISTENERS_COMMAND.equals(text) && !menuLabel.equals(text)) {
+        if (!LISTENERS_COMMAND.equals(text) && !isListenersButton(text, getLocale(update))) {
             return HandleResult.EMPTY;
         }
         long chatId = update.getMessage().getChatId();
@@ -502,6 +505,20 @@ public class OlxTelegramBot implements LongPollingSingleThreadUpdateConsumer {
                         .replyMarkup(buildListenersKeyboard(listeners, locale))
                         .build()
         ).build();
+    }
+
+    /**
+     * Reply-keyboard button labels round-trip with cosmetic differences across clients — an
+     * emoji variation selector (U+FE0F) or altered spacing — so a byte-exact match on the
+     * "📋 <label>" string silently fails while the "/listeners" command still works. Match on
+     * the label text alone, ignoring the leading icon and whitespace.
+     */
+    private boolean isListenersButton(String text, Locale locale) {
+        if (text == null) return false;
+        String label = translationService.translate("menu.listeners", locale);
+        // drop the leading icon, emoji variation selector and spacing before comparing
+        String core = text.replaceAll("^[^\\p{L}]+", "").strip();
+        return core.equalsIgnoreCase(label);
     }
 
     private Locale getLocale(Update update) {

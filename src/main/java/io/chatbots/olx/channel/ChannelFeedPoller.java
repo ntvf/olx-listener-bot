@@ -99,7 +99,10 @@ public class ChannelFeedPoller {
                 sellerId, now.minus(SELLER_COUNT_WINDOW));
         long last90 = offerRepository.countBySellerIdAndFirstSeenAfter(
                 sellerId, now.minus(SELLER_HISTORY_WINDOW));
-        return new AgencyDetector.SellerActivity(last7, last30, last90);
+        long total = offerRepository.countBySellerId(sellerId);
+        Instant earliest = offerRepository.findEarliestFirstSeenBySellerId(sellerId);
+        Duration knownFor = earliest == null ? Duration.ZERO : Duration.between(earliest, now);
+        return new AgencyDetector.SellerActivity(last7, last30, last90, knownFor, total);
     }
 
     private void pause() {
