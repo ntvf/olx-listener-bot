@@ -17,10 +17,15 @@ import org.telegram.telegrambots.meta.generics.TelegramClient;
 import java.math.BigDecimal;
 import java.math.MathContext;
 import java.math.RoundingMode;
+import java.text.Normalizer;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Posts owner-verdict offers to their channels once they are old enough. The delay gives
@@ -32,8 +37,10 @@ public class ChannelPublisher {
 
     static final Duration COMPARABLES_WINDOW = Duration.ofDays(30);
 
-    /** Text CTA kept in the caption itself so it survives screenshots and copy-paste. */
-    private static final String SUBSCRIBE_CTA = "квартири без комісії · больше квартир";
+    /** OLX category URLs carry the search city as the path segment after wynajem/sprzedaz. */
+    private static final Pattern CITY_IN_URL =
+            Pattern.compile("/(?:wynajem|sprzedaz|wynajem-dlugoterminowy)/([\\p{L}][\\p{L}-]+)/");
+
     /** Label of the inline URL button that deep-links back to the channel. */
     private static final String SUBSCRIBE_BUTTON = "📢 Більше квартир →";
 
@@ -127,15 +134,81 @@ public class ChannelPublisher {
         if (offer.getLocation() != null) {
             sb.append("📍 ").append(offer.getLocation()).append('\n');
         }
-        if (StringUtils.isNotBlank(feed.getLabel())) {
-            sb.append('#').append(feed.getLabel().replaceAll("[^\\p{L}\\p{N}_]", "")).append('\n');
+        String tags = buildTags(feed, offer);
+        if (!tags.isEmpty()) {
+            sb.append(tags).append('\n');
         }
         // channel handle as plain text so a forwarded/screenshotted post still routes back
         if (channel != null && StringUtils.isNotBlank(channel.getUsername())) {
-            sb.append("📢 @").append(channel.getUsername()).append(" · ").append(SUBSCRIBE_CTA).append('\n');
+            sb.append("📢 @").append(channel.getUsername()).append('\n');
         }
         sb.append("🔗 ").append(offer.getUrl());
         return sb.toString();
+    }
+
+    /**
+     * Hashtags derived from the parsed listing: a city+rooms and a district+rooms composite
+     * (e.g. {@code #warszawa_2pok #mokotow_2pok}). Composites give subscribers an AND-style
+     * filter in one tap, since Telegram hashtag search only ORs across separate tags. When the
+     * room count is unknown the bare city/district is used; a district equal to the city is
+     * dropped to avoid a duplicate.
+     */
+    String buildTags(ChannelFeed feed, FeedOffer offer) {
+        String city = slug(cityFromUrl(feed.getFeedUrl()));
+        String district = slug(lastSegment(offer.getLocation()));
+        if (district != null && district.equals(city)) district = null;
+        String rooms = roomsTag(offer.getRooms());
+
+        List<String> tags = new ArrayList<>();
+        addTag(tags, withRooms(city, rooms));
+        addTag(tags, withRooms(district, rooms));
+
+        StringBuilder sb = new StringBuilder();
+        for (String tag : tags) {
+            if (sb.length() > 0) sb.append(' ');
+            sb.append('#').append(tag);
+        }
+        return sb.toString();
+    }
+
+    private static String withRooms(String base, String rooms) {
+        if (base == null) return null;
+        return rooms == null ? base : base + "_" + rooms;
+    }
+
+    private static void addTag(List<String> tags, String tag) {
+        if (tag != null && !tags.contains(tag)) tags.add(tag);
+    }
+
+    private static String cityFromUrl(String url) {
+        if (url == null) return null;
+        Matcher m = CITY_IN_URL.matcher(url);
+        return m.find() ? m.group(1) : null;
+    }
+
+    /** The most specific part of a location string, e.g. "Warszawa, Mokotów" -> "Mokotów". */
+    private static String lastSegment(String location) {
+        if (StringUtils.isBlank(location)) return null;
+        int comma = location.lastIndexOf(',');
+        return comma < 0 ? location : location.substring(comma + 1);
+    }
+
+    private static String roomsTag(Integer rooms) {
+        if (rooms == null) return null;
+        return rooms == 1 ? "kawalerka" : rooms + "pok";
+    }
+
+    /** Diacritic-folded, lower-case slug safe for a hashtag: ASCII letters/digits and underscores. */
+    static String slug(String s) {
+        if (StringUtils.isBlank(s)) return null;
+        String folded = Normalizer.normalize(s.toLowerCase(Locale.ROOT), Normalizer.Form.NFD)
+                .replaceAll("\\p{M}+", "")
+                .replace('ł', 'l');
+        String slug = folded.replaceAll("[\\s-]+", "_")
+                .replaceAll("[^a-z0-9_]", "")
+                .replaceAll("_+", "_");
+        slug = StringUtils.strip(slug, "_");
+        return slug.isEmpty() ? null : slug;
     }
 
     private Optional<String> scoreLine(ChannelFeed feed, FeedOffer offer) {

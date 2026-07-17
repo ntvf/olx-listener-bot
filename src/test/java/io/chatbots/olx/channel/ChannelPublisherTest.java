@@ -10,6 +10,7 @@ import java.math.BigDecimal;
 import java.time.Duration;
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -25,7 +26,9 @@ class ChannelPublisherTest {
             mock(TelegramClient.class), Duration.ofMinutes(60), 5);
 
     private ChannelFeed feed() {
-        return ChannelFeed.builder().id(1L).channelChatId(-100L).label("kawalerkiWarszawa").build();
+        return ChannelFeed.builder().id(1L).channelChatId(-100L)
+                .feedUrl("https://www.olx.pl/nieruchomosci/mieszkania/wynajem/warszawa/?search%5Border%5D=created_at:desc")
+                .build();
     }
 
     private FeedOffer offer() {
@@ -51,8 +54,32 @@ class ChannelPublisherTest {
 
         assertTrue(text.contains("📢 @bez_posrednika_waw"), text);
         assertTrue(text.contains("🔗 https://www.olx.pl/d/oferta/x-CID3-ID1.html"), text);
-        assertTrue(text.contains("#kawalerkiWarszawa"), text);
+        assertTrue(text.contains("#warszawa_kawalerka #mokotow_kawalerka"), text);
         assertTrue(text.contains("2 800 zł + 400 zł czynsz"), text);
+    }
+
+    @Test
+    void autoTagsAreCityRoomsAndDistrictRoomsComposites() {
+        FeedOffer offer = FeedOffer.builder().location("Praga-Południe").rooms(2).build();
+        assertEquals("#warszawa_2pok #praga_poludnie_2pok", publisher.buildTags(feed(), offer));
+    }
+
+    @Test
+    void autoTagsSkipMissingDistrict() {
+        FeedOffer offer = FeedOffer.builder().location(null).rooms(1).build();
+        assertEquals("#warszawa_kawalerka", publisher.buildTags(feed(), offer));
+    }
+
+    @Test
+    void autoTagsDropDistrictEqualToCity() {
+        FeedOffer offer = FeedOffer.builder().location("Warszawa").rooms(3).build();
+        assertEquals("#warszawa_3pok", publisher.buildTags(feed(), offer));
+    }
+
+    @Test
+    void autoTagsFallBackToBareCityDistrictWhenRoomsUnknown() {
+        FeedOffer offer = FeedOffer.builder().location("Mokotów").rooms(null).build();
+        assertEquals("#warszawa #mokotow", publisher.buildTags(feed(), offer));
     }
 
     @Test
