@@ -17,4 +17,8 @@
         </addColumn>
     </changeSet>
 
+    <changeSet id="3" author="tymur">
+        <sqlFile path="channel-schema.sql" relativeToChangelogFile="true"/>
+    </changeSet>
+
 </databaseChangeLog>

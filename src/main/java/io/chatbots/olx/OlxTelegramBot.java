@@ -1,5 +1,6 @@
 package io.chatbots.olx;
 
+import io.chatbots.olx.channel.ChannelAdminService;
 import io.chatbots.olx.checker.RegressionChecker;
 import io.chatbots.olx.grabber.Offer;
 import io.chatbots.olx.grabber.OlxGrabber;
@@ -100,6 +101,11 @@ public class OlxTelegramBot implements LongPollingSingleThreadUpdateConsumer {
     private ListenerOfferHashRepository hashRepository;
     @Autowired
     private ScoreService scoreService;
+    @Autowired
+    private ChannelAdminService channelAdminService;
+    // Telegram user id allowed to manage channel feeds; 0 disables the commands entirely
+    @Value("${channel.admin-user-id:0}")
+    private long channelAdminUserId;
     @Value("${ai.score.enabled:true}")
     private boolean aiScoreEnabled;
     // the "code word" gating the score feature; deployments should override the default
@@ -239,6 +245,7 @@ public class OlxTelegramBot implements LongPollingSingleThreadUpdateConsumer {
     }
 
     private void handleMyChatMember(ChatMemberUpdated event) {
+        channelAdminService.handleChatMemberUpdate(event);
         String status = event.getNewChatMember().getStatus();
         if ("kicked".equals(status) || "left".equals(status)) {
             listenerStorage.deactivateChatListeners(event.getChat().getId());
@@ -264,7 +271,8 @@ public class OlxTelegramBot implements LongPollingSingleThreadUpdateConsumer {
         List<BooleanSupplier> handlers = new ArrayList<>();
         handlers.add(execute(this::start, update, true));
         handlers.add(execute(this::listListeners, update, true));
-        // must run before addListener, which would otherwise register the scored URL as a listener
+        // both must run before addListener, which would otherwise register their URLs as listeners
+        handlers.add(execute(this::channelAdmin, update, true));
         handlers.add(execute(this::scoreListing, update, true));
         handlers.add(execute(this::addListener, update, true));
         handlers.add(execute(this::stats, update, true));
@@ -274,6 +282,26 @@ public class OlxTelegramBot implements LongPollingSingleThreadUpdateConsumer {
 
     private HandleResult unknownCommand(Update update) {
         return HandleResult.EMPTY;
+    }
+
+    /**
+     * Hidden channel management (/channels, /link, /unlink) — only the configured admin
+     * user id can use it, everyone else falls through to the regular handlers.
+     */
+    private HandleResult channelAdmin(Update update) {
+        if (channelAdminUserId == 0
+                || update.getMessage().getFrom() == null
+                || update.getMessage().getFrom().getId() != channelAdminUserId) {
+            return HandleResult.EMPTY;
+        }
+        String reply = channelAdminService.handleCommand(getText(update));
+        if (reply == null) return HandleResult.EMPTY;
+        return HandleResult.builder().botApiMethod(
+                SendMessage.builder()
+                        .chatId(update.getMessage().getChatId())
+                        .text(reply)
+                        .build()
+        ).build();
     }
 
     private String getText(Update update) {
