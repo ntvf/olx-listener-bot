@@ -9,9 +9,9 @@ import org.jsoup.Jsoup;
 import org.jsoup.nodes.Element;
 
 import java.io.IOException;
-import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.util.Collections;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -62,12 +62,12 @@ public class QA extends BaseParser implements Parser {
             String[] parts = raw.split(" - ");
             // skip [0] (city/location), try remaining segments for a parseable date
             for (int i = 1; i < parts.length; i++) {
-                // OLX renders the card time in Warsaw local time; keep it as the wall-clock value
-                // shown ("Dzisiaj o 19:16") rather than shifting it through UTC.
-                LocalDateTime dt = PlUpdatedAtDateParser
-                        .parseOlxDate(parts[i], LocalDate.now(WARSAW)).orElse(null);
+                // OLX renders the card time in UTC in the static HTML we scrape ("dzisiaj o 21:40"),
+                // and the browser JS localizes it to Warsaw (23:40). Jsoup runs no JS, so we do that
+                // conversion ourselves: read the value as UTC and present it in Warsaw local time.
+                LocalDateTime dt = PlUpdatedAtDateParser.parseOlxDate(parts[i]);
                 if (dt != null) {
-                    return dt;
+                    return LocalDateTime.ofInstant(dt.toInstant(ZoneOffset.UTC), WARSAW);
                 }
             }
         } catch (Exception ignored) {
