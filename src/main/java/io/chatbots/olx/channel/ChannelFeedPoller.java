@@ -56,7 +56,8 @@ public class ChannelFeedPoller {
             ListingEnricher.Enriched details = enricher.enrich(offer.getUrl());
             AgencyDetector.SellerActivity activity = sellerActivity(details.sellerId(), details.phone());
             AgencyDetector.Verdict verdict = AgencyDetector.classify(
-                    offer.getName(), details.description(), details.sellerBusiness(), activity);
+                    offer.getName(), details.description(), details.advertiserName(),
+                    details.sellerBusiness(), activity);
 
             Instant now = Instant.now();
             offerRepository.save(FeedOffer.builder()

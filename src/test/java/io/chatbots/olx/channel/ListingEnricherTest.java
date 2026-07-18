@@ -155,7 +155,7 @@ class ListingEnricherTest {
         assertTrue(e.sellerBusiness());
         assertEquals("10293901", e.sellerId());
         assertEquals("Exclusive Partners", e.advertiserName());
-        assertEquals("+48789365761", e.phone()); // contactDetails wins over owner
+        assertEquals("48789365761", e.phone()); // contactDetails wins over owner, normalized
         assertEquals("https://img.otodom/large.jpg", e.imageUrl());
         assertTrue(e.description().contains("bez prowizji"));
     }
@@ -180,8 +180,45 @@ class ListingEnricherTest {
         assertFalse(e.sellerBusiness());
         assertEquals(1, e.rooms());
         assertEquals("Kraków", e.location());
-        assertEquals("+48111222333", e.phone()); // no contactDetails -> owner phone
+        assertEquals("48111222333", e.phone()); // no contactDetails -> owner phone, normalized
         assertEquals("555", e.sellerId());
+    }
+
+    /**
+     * OLX ships advertiser identity (name, business flag, numeric offer id) and a "phone exists"
+     * flag in window.__PRERENDERED_STATE__ — a JS string of escaped JSON. The phone number itself
+     * is not here; only whether one can be fetched. Mirrors the live olx.pl shape (ad.ad.*).
+     */
+    @Test
+    void parsesOlxPrerenderedState() {
+        String html = """
+                <html><body>
+                <script>
+                window.__PRERENDERED_STATE__ = "{\\"ad\\":{\\"ad\\":{\\"id\\":1085647952,\\"isBusiness\\":true,\\"contact\\":{\\"phone\\":true},\\"user\\":{\\"id\\":638613187,\\"name\\":\\"HORIZON ESTATE\\"}}}}";
+                window.OTHER = 1;
+                </script>
+                </body></html>
+                """;
+        ListingEnricher.OlxIdentity id = enricher.parseOlxPrerendered(Jsoup.parse(html));
+
+        assertEquals("HORIZON ESTATE", id.sellerName());
+        assertTrue(id.business());
+        assertEquals("1085647952", id.offerId());
+        assertTrue(id.hasPhone());
+    }
+
+    @Test
+    void missingPrerenderedStateYieldsNull() {
+        assertNull(enricher.parseOlxPrerendered(Jsoup.parse("<html><body>no state here</body></html>")));
+    }
+
+    @Test
+    void phoneNormalizationUnifiesSources() {
+        assertEquals("48571310725", ListingEnricher.normalizePhone("571 310 725")); // OLX national
+        assertEquals("48570704752", ListingEnricher.normalizePhone("+48570704752")); // Otodom E.164
+        assertEquals("48123456789", ListingEnricher.normalizePhone("0048 123 456 789")); // 00 prefix
+        assertNull(ListingEnricher.normalizePhone(null));
+        assertNull(ListingEnricher.normalizePhone("brak"));
     }
 
     @Test

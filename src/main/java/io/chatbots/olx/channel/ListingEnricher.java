@@ -32,7 +32,18 @@ public class ListingEnricher {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    @Builder
+    /** When true, OLX-native listings also get their phone via the limited-phones API. */
+    private final boolean harvestPhones;
+
+    public ListingEnricher() {
+        this(true);
+    }
+
+    public ListingEnricher(boolean harvestPhones) {
+        this.harvestPhones = harvestPhones;
+    }
+
+    @Builder(toBuilder = true)
     public record Enriched(BigDecimal price, String currency, BigDecimal extraRent,
                            BigDecimal areaM2, Integer rooms, String location,
                            String sellerId, Boolean sellerBusiness,
@@ -49,7 +60,7 @@ public class ListingEnricher {
                     .get();
             // OLX real-estate feeds surface Otodom listings whose detail pages use a wholly
             // different (Next.js) markup; route them to the Otodom parser instead of the OLX one.
-            return isOtodom(url) ? parseOtodom(doc) : parse(doc);
+            return isOtodom(url) ? parseOtodom(doc) : harvestOlx(parse(doc), doc, url);
         } catch (Exception e) {
             log.warn("Failed to enrich listing {}: {}", url, e.toString());
             return Enriched.builder().build();
@@ -58,6 +69,104 @@ public class ListingEnricher {
 
     static boolean isOtodom(String url) {
         return url != null && url.contains("otodom.");
+    }
+
+    /**
+     * Fills in what only the OLX SPA state / phone API carry: the advertiser's real name and
+     * business flag from {@code __PRERENDERED_STATE__}, and the phone from the (unauthenticated)
+     * {@code /api/v1/offers/{id}/limited-phones/} endpoint. All best-effort — a listing with no
+     * exposed phone or a changed endpoint just keeps whatever {@link #parse} already found.
+     */
+    private Enriched harvestOlx(Enriched base, Document doc, String url) {
+        OlxIdentity id = parseOlxPrerendered(doc);
+        if (id == null) return base;
+
+        Enriched.EnrichedBuilder b = base.toBuilder();
+        if (base.advertiserName() == null && id.sellerName() != null) b.advertiserName(id.sellerName());
+        if (base.sellerBusiness() == null && id.business() != null) b.sellerBusiness(id.business());
+        if (harvestPhones && base.phone() == null && id.hasPhone() && id.offerId() != null) {
+            String phone = normalizePhone(fetchOlxPhone(url, id.offerId()));
+            if (phone != null) b.phone(phone);
+        }
+        return b.build();
+    }
+
+    /** The advertiser identity OLX ships in its prerendered Redux state, not in the visible markup. */
+    record OlxIdentity(String sellerName, Boolean business, String offerId, boolean hasPhone) {
+    }
+
+    /**
+     * Reads {@code window.__PRERENDERED_STATE__}, a JS string literal holding escaped JSON. The
+     * quoted literal is itself valid JSON (its escapes are JSON-compatible), so it decodes in one
+     * {@code readTree} pass; the inner JSON is then parsed for {@code ad.ad}.
+     */
+    OlxIdentity parseOlxPrerendered(Document doc) {
+        for (Element script : doc.select("script")) {
+            String data = script.data();
+            int at = data.indexOf("__PRERENDERED_STATE__");
+            if (at < 0) continue;
+            try {
+                int open = data.indexOf('"', at);
+                int close = endOfJsString(data, open);
+                if (open < 0 || close < 0) return null;
+                String json = objectMapper.readTree(data.substring(open, close + 1)).asText();
+                JsonNode ad = objectMapper.readTree(json).path("ad").path("ad");
+                if (ad.isMissingNode()) return null;
+                String offerId = ad.path("id").asText(null);
+                boolean hasPhone = ad.path("contact").path("phone").asBoolean(false);
+                Boolean business = ad.has("isBusiness") ? ad.get("isBusiness").asBoolean() : null;
+                String name = StringUtils.trimToNull(ad.path("user").path("name").asText(null));
+                return new OlxIdentity(name, business, offerId, hasPhone);
+            } catch (Exception e) {
+                log.debug("Failed to parse OLX __PRERENDERED_STATE__", e);
+                return null;
+            }
+        }
+        return null;
+    }
+
+    /** Index of the closing quote of the JS string literal opened at {@code open}, honouring escapes. */
+    private static int endOfJsString(String s, int open) {
+        if (open < 0) return -1;
+        for (int i = open + 1; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c == '\\') i++;            // skip the escaped char
+            else if (c == '"') return i;
+        }
+        return -1;
+    }
+
+    private String fetchOlxPhone(String listingUrl, String offerId) {
+        try {
+            java.net.URI u = java.net.URI.create(listingUrl);
+            String api = u.getScheme() + "://" + u.getHost() + "/api/v1/offers/" + offerId + "/limited-phones/";
+            String body = Jsoup.connect(api)
+                    .userAgent(USER_AGENT)
+                    .header("Accept", "application/json")
+                    .ignoreContentType(true)
+                    .timeout(15_000)
+                    .execute().body();
+            JsonNode phones = objectMapper.readTree(body).path("data").path("phones");
+            if (phones.isArray() && !phones.isEmpty()) {
+                return StringUtils.trimToNull(phones.get(0).asText(null));
+            }
+        } catch (Exception e) {
+            log.debug("No phone for OLX offer {}: {}", offerId, e.toString());
+        }
+        return null;
+    }
+
+    /**
+     * Normalizes a phone to a bare digit string with the country code, so the same number matches
+     * across sources: Otodom ships "+48570704752", OLX ships "571 310 725". A 9-digit number is
+     * assumed Polish and prefixed with 48; leading 00 international prefixes are dropped.
+     */
+    static String normalizePhone(String raw) {
+        if (raw == null) return null;
+        String digits = raw.replaceAll("\\D", "");
+        if (digits.startsWith("00")) digits = digits.substring(2);
+        if (digits.length() == 9) digits = "48" + digits;
+        return digits.isEmpty() ? null : digits;
     }
 
     Enriched parse(Document doc) {
@@ -145,7 +254,7 @@ public class ListingEnricher {
             String sellerId = owner.path("id").asText(null);
             if (StringUtils.isNotBlank(sellerId)) out.sellerId(sellerId);
             out.advertiserName(StringUtils.trimToNull(owner.path("name").asText(null)));
-            out.phone(firstPhone(ad));
+            out.phone(normalizePhone(firstPhone(ad)));
 
             String desc = ad.path("description").asText(null);
             if (StringUtils.isNotBlank(desc)) out.description(Jsoup.parse(desc).text());

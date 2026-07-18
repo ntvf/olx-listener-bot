@@ -108,13 +108,28 @@ public final class AgencyDetector {
 
     public static Verdict classify(String title, String description,
                                    Boolean sellerBusiness, SellerActivity activity) {
+        return classify(title, description, null, sellerBusiness, activity);
+    }
+
+    /**
+     * @param advertiserName the seller's/agency's display name, harvested from the listing's SPA
+     *                       state (OLX {@code user.name}) or JSON ({@code owner.name}). Matched
+     *                       alongside the title and description: an agency's legal name often
+     *                       carries a hard tell ("sp. z o.o.", "biuro nieruchomości", a brand) the
+     *                       ad copy itself hides. A private seller's personal name trips nothing.
+     */
+    public static Verdict classify(String title, String description, String advertiserName,
+                                   Boolean sellerBusiness, SellerActivity activity) {
         if (activity == null) activity = SellerActivity.NONE;
         if (Boolean.TRUE.equals(sellerBusiness)) return Verdict.AGENCY;
         if (activity.listingsLast30Days() > MAX_PRIVATE_LISTINGS_30D) return Verdict.AGENCY;
         if (activity.listingsLast7Days() > MAX_PRIVATE_LISTINGS_7D) return Verdict.AGENCY;
         if (activity.listingsLast90Days() > MAX_PRIVATE_LISTINGS_90D) return Verdict.AGENCY;
 
-        String text = fold((title == null ? "" : title) + " " + (description == null ? "" : description));
+        String text = fold(String.join(" ",
+                title == null ? "" : title,
+                description == null ? "" : description,
+                advertiserName == null ? "" : advertiserName));
         // Presence of an owner phrase is a positive publish signal; capture it before the same
         // stems are stripped so they cannot trip the agency stems ("bez prowizji" vs "prowizj").
         boolean ownerSignal = OWNER_STEMS.stream().anyMatch(text::contains);

@@ -184,6 +184,38 @@ class AgencyDetectorTest {
         assertEquals(Verdict.LIKELY_AGENCY, AgencyDetector.classify(null, null, null, null));
     }
 
+    // --- advertiser name (harvested from SPA state / JSON) -------------------------
+
+    @Test
+    void agencyLegalSuffixInNameIsAgency() {
+        // ad copy is clean, but the harvested advertiser name carries "sp. z o.o." — a hard tell
+        assertEquals(Verdict.AGENCY,
+                AgencyDetector.classify("Mieszkanie 2 pokoje", "Wynajmę od zaraz",
+                        "HORIZON ESTATE sp. z o.o.", false, SellerActivity.NONE));
+    }
+
+    @Test
+    void biuroNieruchomosciInNameIsAgency() {
+        assertEquals(Verdict.AGENCY,
+                AgencyDetector.classify("Kawalerka Wola", "Ładne mieszkanie",
+                        "Biuro Nieruchomości Kowalski", false, SellerActivity.NONE));
+    }
+
+    @Test
+    void personalNameDoesNotTripAgency() {
+        // a genuine owner's name is just a name — with an owner phrase this still publishes
+        assertEquals(Verdict.OWNER,
+                AgencyDetector.classify("Mieszkanie 2 pokoje", "Wynajmę od właściciela",
+                        "Anna Kowalska", false, SellerActivity.NONE));
+    }
+
+    @Test
+    void nullAdvertiserNameMatchesLegacyBehaviour() {
+        assertEquals(Verdict.LIKELY_AGENCY,
+                AgencyDetector.classify("Mieszkanie 3 pokoje", "Wynajmę mieszkanie od zaraz",
+                        null, false, SellerActivity.NONE));
+    }
+
     @Test
     void ukrainianOwnerPhraseRecognized() {
         assertEquals(Verdict.OWNER,

@@ -19,8 +19,9 @@ import java.time.Duration;
 public class ChannelConfig {
 
     @Bean
-    public ListingEnricher listingEnricher() {
-        return new ListingEnricher();
+    public ListingEnricher listingEnricher(
+            @Value("${channel.harvest-phones:true}") boolean harvestPhones) {
+        return new ListingEnricher(harvestPhones);
     }
 
     @Bean
