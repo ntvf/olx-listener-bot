@@ -36,7 +36,8 @@ public class ListingEnricher {
     public record Enriched(BigDecimal price, String currency, BigDecimal extraRent,
                            BigDecimal areaM2, Integer rooms, String location,
                            String sellerId, Boolean sellerBusiness,
-                           String description, String imageUrl) {
+                           String description, String imageUrl,
+                           String phone, String advertiserName) {
     }
 
     public Enriched enrich(String url) {
@@ -46,11 +47,17 @@ public class ListingEnricher {
                     .header("Accept-Language", "pl-PL,pl;q=0.9,en;q=0.8")
                     .timeout(20_000)
                     .get();
-            return parse(doc);
+            // OLX real-estate feeds surface Otodom listings whose detail pages use a wholly
+            // different (Next.js) markup; route them to the Otodom parser instead of the OLX one.
+            return isOtodom(url) ? parseOtodom(doc) : parse(doc);
         } catch (Exception e) {
             log.warn("Failed to enrich listing {}: {}", url, e.toString());
             return Enriched.builder().build();
         }
+    }
+
+    static boolean isOtodom(String url) {
+        return url != null && url.contains("otodom.");
     }
 
     Enriched parse(Document doc) {
@@ -95,6 +102,103 @@ public class ListingEnricher {
         if (location != null) out.location(StringUtils.abbreviate(location, 255));
 
         return out.build();
+    }
+
+    /**
+     * Parses an Otodom listing detail page. Otodom is a Next.js app that ships the entire
+     * offer as JSON in a {@code <script id="__NEXT_DATA__">} blob, so — unlike OLX — price,
+     * area, rooms, location, advertiser type/name and the contact phone are all present in
+     * the static HTML. {@code owner.id} is used as the seller id and the advertiser phone is
+     * captured for phone-based agency statistics.
+     */
+    Enriched parseOtodom(Document doc) {
+        Enriched.EnrichedBuilder out = Enriched.builder();
+        Element script = doc.selectFirst("script#__NEXT_DATA__");
+        if (script == null) return out.build();
+        try {
+            JsonNode ad = objectMapper.readTree(script.data())
+                    .path("props").path("pageProps").path("ad");
+            if (ad.isMissingNode() || ad.isNull()) return out.build();
+
+            // characteristics carry price / rent (czynsz) / area / room count as flat key-value rows
+            for (JsonNode c : ad.path("characteristics")) {
+                String key = c.path("key").asText("");
+                String value = c.path("value").asText(null);
+                switch (key) {
+                    case "price" -> out.price(toNumber(value));
+                    case "rent" -> out.extraRent(toNumber(value));
+                    case "m" -> out.areaM2(toNumber(value));
+                    case "rooms_num" -> out.rooms(parseRooms(value));
+                    default -> { }
+                }
+            }
+            out.currency("PLN");
+
+            out.location(otodomLocation(ad.path("location")));
+
+            // advertType (AGENCY/PRIVATE) is the authoritative business flag; advertiserType is a fallback
+            String advertType = ad.path("advertType").asText("");
+            if ("AGENCY".equalsIgnoreCase(advertType)) out.sellerBusiness(true);
+            else if ("PRIVATE".equalsIgnoreCase(advertType)) out.sellerBusiness(false);
+
+            JsonNode owner = ad.path("owner");
+            String sellerId = owner.path("id").asText(null);
+            if (StringUtils.isNotBlank(sellerId)) out.sellerId(sellerId);
+            out.advertiserName(StringUtils.trimToNull(owner.path("name").asText(null)));
+            out.phone(firstPhone(ad));
+
+            String desc = ad.path("description").asText(null);
+            if (StringUtils.isNotBlank(desc)) out.description(Jsoup.parse(desc).text());
+
+            JsonNode images = ad.path("images");
+            if (images.isArray() && !images.isEmpty()) {
+                out.imageUrl(StringUtils.trimToNull(images.get(0).path("large").asText(null)));
+            }
+        } catch (Exception e) {
+            log.warn("Failed to parse Otodom __NEXT_DATA__", e);
+        }
+        return out.build();
+    }
+
+    /** Prefers the direct contact phone; falls back to the owner/agency phone. */
+    private static String firstPhone(JsonNode ad) {
+        for (String path : new String[]{"contactDetails", "owner", "agency"}) {
+            JsonNode phones = ad.path(path).path("phones");
+            if (phones.isArray() && !phones.isEmpty()) {
+                String phone = StringUtils.trimToNull(phones.get(0).asText(null));
+                if (phone != null) return phone;
+            }
+        }
+        return null;
+    }
+
+    /** Builds "City, District" from Otodom's reverse-geocoding ladder, most-specific last. */
+    private static String otodomLocation(JsonNode location) {
+        String city = null;
+        String specific = null;
+        for (JsonNode loc : location.path("reverseGeocoding").path("locations")) {
+            String level = loc.path("locationLevel").asText("");
+            String name = StringUtils.trimToNull(loc.path("name").asText(null));
+            if (name == null) continue;
+            if (level.startsWith("city")) city = name;
+            specific = name; // ladder is ordered broad → narrow
+        }
+        String result;
+        if (city != null && specific != null && !specific.equals(city)) {
+            result = city + ", " + specific;
+        } else {
+            result = city != null ? city : specific;
+        }
+        return result == null ? null : StringUtils.abbreviate(result, 255);
+    }
+
+    private static Integer parseRooms(String value) {
+        if (value == null) return null;
+        try {
+            return Integer.parseInt(value.trim());
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     private void parseJsonLd(Document doc, Enriched.EnrichedBuilder out) {

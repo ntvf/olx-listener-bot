@@ -59,6 +59,14 @@ public class FeedOffer {
     @Column(name = "seller_business")
     private Boolean sellerBusiness;
 
+    /** Advertiser phone, when the listing exposes one (currently only Otodom does). */
+    @Column(length = 32)
+    private String phone;
+
+    /** Advertiser / agency display name, when available (Otodom {@code owner.name}). */
+    @Column(name = "advertiser_name", length = 255)
+    private String advertiserName;
+
     @Column(length = 16)
     private String verdict;
 

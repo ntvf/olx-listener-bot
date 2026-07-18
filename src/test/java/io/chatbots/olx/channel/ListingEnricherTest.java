@@ -114,6 +114,82 @@ class ListingEnricherTest {
         assertEquals(0, e.areaM2().compareTo(BigDecimal.valueOf(52)));
     }
 
+    /**
+     * Mirrors an Otodom detail page: the whole offer ships as JSON in the __NEXT_DATA__ blob,
+     * so price/rent/area/rooms come from characteristics, the advertiser type from advertType,
+     * the seller id from owner.id, the phone from contactDetails, and the district from the
+     * reverse-geocoding ladder. OLX selectors match nothing here — this path replaces them.
+     */
+    @Test
+    void parsesOtodomNextData() {
+        String html = """
+                <html><body>
+                <script id="__NEXT_DATA__" type="application/json">
+                {"props":{"pageProps":{"ad":{
+                  "advertType":"AGENCY",
+                  "characteristics":[
+                    {"key":"price","value":"4700"},
+                    {"key":"rent","value":"1100"},
+                    {"key":"m","value":"56.96"},
+                    {"key":"rooms_num","value":"2"}],
+                  "location":{"reverseGeocoding":{"locations":[
+                    {"locationLevel":"voivodeship","name":"mazowieckie"},
+                    {"locationLevel":"city_or_village","name":"Warszawa"},
+                    {"locationLevel":"district","name":"Śródmieście"}]}},
+                  "owner":{"id":10293901,"type":"agency","name":"Exclusive Partners","phones":["+48570704752"]},
+                  "contactDetails":{"phones":["+48789365761"]},
+                  "description":"<p>Przedwojenna elegancja <b>bez</b> prowizji.</p>",
+                  "images":[{"large":"https://img.otodom/large.jpg","medium":"m.jpg"}]
+                }}}}
+                </script>
+                </body></html>
+                """;
+        ListingEnricher.Enriched e = enricher.parseOtodom(Jsoup.parse(html));
+
+        assertEquals(0, e.price().compareTo(BigDecimal.valueOf(4700)));
+        assertEquals("PLN", e.currency());
+        assertEquals(0, e.extraRent().compareTo(BigDecimal.valueOf(1100)));
+        assertEquals(0, e.areaM2().compareTo(new BigDecimal("56.96")));
+        assertEquals(2, e.rooms());
+        assertEquals("Warszawa, Śródmieście", e.location());
+        assertTrue(e.sellerBusiness());
+        assertEquals("10293901", e.sellerId());
+        assertEquals("Exclusive Partners", e.advertiserName());
+        assertEquals("+48789365761", e.phone()); // contactDetails wins over owner
+        assertEquals("https://img.otodom/large.jpg", e.imageUrl());
+        assertTrue(e.description().contains("bez prowizji"));
+    }
+
+    @Test
+    void privateOtodomListingHasNoBusinessFlagAndFallsBackToOwnerPhone() {
+        String html = """
+                <html><body>
+                <script id="__NEXT_DATA__" type="application/json">
+                {"props":{"pageProps":{"ad":{
+                  "advertType":"PRIVATE",
+                  "characteristics":[{"key":"m","value":"30"},{"key":"rooms_num","value":"1"}],
+                  "location":{"reverseGeocoding":{"locations":[
+                    {"locationLevel":"city_or_village","name":"Kraków"}]}},
+                  "owner":{"id":555,"type":"private","name":"Anna","phones":["+48111222333"]}
+                }}}}
+                </script>
+                </body></html>
+                """;
+        ListingEnricher.Enriched e = enricher.parseOtodom(Jsoup.parse(html));
+
+        assertFalse(e.sellerBusiness());
+        assertEquals(1, e.rooms());
+        assertEquals("Kraków", e.location());
+        assertEquals("+48111222333", e.phone()); // no contactDetails -> owner phone
+        assertEquals("555", e.sellerId());
+    }
+
+    @Test
+    void otodomUrlIsDetected() {
+        assertTrue(ListingEnricher.isOtodom("https://www.otodom.pl/pl/oferta/x-ID4BWKL"));
+        assertFalse(ListingEnricher.isOtodom("https://www.olx.pl/d/oferta/y.html"));
+    }
+
     @Test
     void sellerIdFromHrefVariants() {
         assertEquals("slug123", ListingEnricher.sellerIdFromHref("https://www.olx.pl/oferty/uzytkownik/slug123/"));

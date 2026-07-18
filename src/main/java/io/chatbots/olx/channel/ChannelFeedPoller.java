@@ -54,7 +54,7 @@ public class ChannelFeedPoller {
             if (known.contains(hash)) continue;
 
             ListingEnricher.Enriched details = enricher.enrich(offer.getUrl());
-            AgencyDetector.SellerActivity activity = sellerActivity(details.sellerId());
+            AgencyDetector.SellerActivity activity = sellerActivity(details.sellerId(), details.phone());
             AgencyDetector.Verdict verdict = AgencyDetector.classify(
                     offer.getName(), details.description(), details.sellerBusiness(), activity);
 
@@ -72,6 +72,8 @@ public class ChannelFeedPoller {
                     .location(details.location())
                     .sellerId(details.sellerId())
                     .sellerBusiness(details.sellerBusiness())
+                    .phone(details.phone())
+                    .advertiserName(details.advertiserName())
                     .verdict(verdict.name())
                     .imageUrl(details.imageUrl())
                     .firstSeen(now)
@@ -86,23 +88,52 @@ public class ChannelFeedPoller {
     }
 
     /**
-     * How many listings this seller is already behind in our own history. Listings expire and
-     * vanish from OLX, so a live "active listings" count understates agencies; our retained
+     * How many listings this advertiser is already behind in our own history. Listings expire
+     * and vanish from OLX, so a live "active listings" count understates agencies; our retained
      * feed_offers rows do not, which is why the counts come from the DB, not the site.
+     *
+     * <p>Counted over two independent identities — the seller account id and the contact phone —
+     * then merged by taking the higher count in each window. A phone is the stronger cross-listing
+     * tell: an agency rotating through several account slugs still reuses the same number.
      */
-    private AgencyDetector.SellerActivity sellerActivity(String sellerId) {
-        if (sellerId == null) return AgencyDetector.SellerActivity.NONE;
+    private AgencyDetector.SellerActivity sellerActivity(String sellerId, String phone) {
+        AgencyDetector.SellerActivity bySeller = activityFor(sellerId,
+                offerRepository::countBySellerIdAndFirstSeenAfter,
+                offerRepository::countBySellerId,
+                offerRepository::findEarliestFirstSeenBySellerId);
+        AgencyDetector.SellerActivity byPhone = activityFor(phone,
+                offerRepository::countByPhoneAndFirstSeenAfter,
+                offerRepository::countByPhone,
+                offerRepository::findEarliestFirstSeenByPhone);
+        return merge(bySeller, byPhone);
+    }
+
+    private AgencyDetector.SellerActivity activityFor(
+            String key,
+            java.util.function.BiFunction<String, Instant, Long> countSince,
+            java.util.function.Function<String, Long> countAll,
+            java.util.function.Function<String, Instant> earliestSeen) {
+        if (StringUtils.isBlank(key)) return AgencyDetector.SellerActivity.NONE;
         Instant now = Instant.now();
-        long last7 = offerRepository.countBySellerIdAndFirstSeenAfter(
-                sellerId, now.minus(SELLER_ROTATION_WINDOW));
-        long last30 = offerRepository.countBySellerIdAndFirstSeenAfter(
-                sellerId, now.minus(SELLER_COUNT_WINDOW));
-        long last90 = offerRepository.countBySellerIdAndFirstSeenAfter(
-                sellerId, now.minus(SELLER_HISTORY_WINDOW));
-        long total = offerRepository.countBySellerId(sellerId);
-        Instant earliest = offerRepository.findEarliestFirstSeenBySellerId(sellerId);
+        long last7 = countSince.apply(key, now.minus(SELLER_ROTATION_WINDOW));
+        long last30 = countSince.apply(key, now.minus(SELLER_COUNT_WINDOW));
+        long last90 = countSince.apply(key, now.minus(SELLER_HISTORY_WINDOW));
+        long total = countAll.apply(key);
+        Instant earliest = earliestSeen.apply(key);
         Duration knownFor = earliest == null ? Duration.ZERO : Duration.between(earliest, now);
         return new AgencyDetector.SellerActivity(last7, last30, last90, knownFor, total);
+    }
+
+    /** Merges two identity views: higher count per window, longer tenure, higher total. */
+    private static AgencyDetector.SellerActivity merge(AgencyDetector.SellerActivity a,
+                                                       AgencyDetector.SellerActivity b) {
+        Duration knownFor = a.knownFor().compareTo(b.knownFor()) >= 0 ? a.knownFor() : b.knownFor();
+        return new AgencyDetector.SellerActivity(
+                Math.max(a.listingsLast7Days(), b.listingsLast7Days()),
+                Math.max(a.listingsLast30Days(), b.listingsLast30Days()),
+                Math.max(a.listingsLast90Days(), b.listingsLast90Days()),
+                knownFor,
+                Math.max(a.listingsTotal(), b.listingsTotal()));
     }
 
     private void pause() {

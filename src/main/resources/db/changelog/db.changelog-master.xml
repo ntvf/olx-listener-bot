@@ -21,4 +21,15 @@
         <sqlFile path="channel-schema.sql" relativeToChangelogFile="true"/>
     </changeSet>
 
+    <changeSet id="4" author="tymur">
+        <comment>Store advertiser phone and name (from Otodom listings) for phone-based agency stats</comment>
+        <addColumn tableName="feed_offers">
+            <column name="phone" type="varchar(32)"/>
+            <column name="advertiser_name" type="varchar(255)"/>
+        </addColumn>
+        <createIndex tableName="feed_offers" indexName="idx_feed_offers_phone">
+            <column name="phone"/>
+        </createIndex>
+    </changeSet>
+
 </databaseChangeLog>
