@@ -9,15 +9,17 @@ import org.jsoup.Jsoup;
 import org.jsoup.nodes.Element;
 
 import java.io.IOException;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
-import java.time.ZoneOffset;
 import java.util.Collections;
 import java.util.List;
 import java.util.stream.Collectors;
 
 @Slf4j
 public class QA extends BaseParser implements Parser {
+
+    private static final ZoneId WARSAW = ZoneId.of("Europe/Warsaw");
 
     static String getSortedByLastCreatedUrl(String url) {
         String desiredSort = "search%5Border%5D=created_at:desc";
@@ -60,9 +62,12 @@ public class QA extends BaseParser implements Parser {
             String[] parts = raw.split(" - ");
             // skip [0] (city/location), try remaining segments for a parseable date
             for (int i = 1; i < parts.length; i++) {
-                LocalDateTime dt = PlUpdatedAtDateParser.parseOlxDate(parts[i]);
+                // OLX renders the card time in Warsaw local time; keep it as the wall-clock value
+                // shown ("Dzisiaj o 19:16") rather than shifting it through UTC.
+                LocalDateTime dt = PlUpdatedAtDateParser
+                        .parseOlxDate(parts[i], LocalDate.now(WARSAW)).orElse(null);
                 if (dt != null) {
-                    return LocalDateTime.ofInstant(dt.toInstant(ZoneOffset.UTC), ZoneId.of("Europe/Warsaw"));
+                    return dt;
                 }
             }
         } catch (Exception ignored) {

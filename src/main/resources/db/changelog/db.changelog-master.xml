@@ -48,4 +48,16 @@
         </sql>
     </changeSet>
 
+    <changeSet id="6" author="tymur">
+        <comment>Schedule channel posts from the listing's real publish time, not first discovery</comment>
+        <addColumn tableName="feed_offers">
+            <column name="published_at" type="timestamp"/>
+        </addColumn>
+        <sql>UPDATE feed_offers SET published_at = first_seen WHERE published_at IS NULL</sql>
+        <addNotNullConstraint tableName="feed_offers" columnName="published_at" columnDataType="timestamp"/>
+        <createIndex tableName="feed_offers" indexName="idx_feed_offers_published_at">
+            <column name="published_at"/>
+        </createIndex>
+    </changeSet>
+
 </databaseChangeLog>

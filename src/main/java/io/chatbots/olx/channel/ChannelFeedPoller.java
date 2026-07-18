@@ -11,6 +11,9 @@ import org.apache.commons.lang3.StringUtils;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Set;
 
@@ -21,6 +24,9 @@ import java.util.Set;
 @Slf4j
 @RequiredArgsConstructor
 public class ChannelFeedPoller {
+
+    /** OLX card times ("Dzisiaj o 19:16") are Warsaw wall-clock; zone them here to a real instant. */
+    private static final ZoneId LISTING_ZONE = ZoneId.of("Europe/Warsaw");
 
     static final Duration SELLER_ROTATION_WINDOW = Duration.ofDays(7);
     static final Duration SELLER_COUNT_WINDOW = Duration.ofDays(30);
@@ -80,6 +86,7 @@ public class ChannelFeedPoller {
                             offer.getName(), details.description(), details.advertiserName()))
                     .imageUrl(details.imageUrl())
                     .firstSeen(now)
+                    .publishedAt(publishInstant(offer.getUpdatedAt(), now))
                     .postedAt(baseline ? now : null)
                     .build());
             stored++;
@@ -137,6 +144,16 @@ public class ChannelFeedPoller {
                 Math.max(a.listingsLast90Days(), b.listingsLast90Days()),
                 knownFor,
                 Math.max(a.listingsTotal(), b.listingsTotal()));
+    }
+
+    /**
+     * The instant a listing was actually published, used to schedule its post. The OLX card time is
+     * Warsaw wall-clock; a precise "today HH:mm" is zoned to a real instant, while a date-only card
+     * (older listings, parsed to midnight) or an unparsed one falls back to first discovery.
+     */
+    static Instant publishInstant(LocalDateTime cardTime, Instant firstSeen) {
+        if (cardTime == null || cardTime.toLocalTime().equals(LocalTime.MIDNIGHT)) return firstSeen;
+        return cardTime.atZone(LISTING_ZONE).toInstant();
     }
 
     private void pause() {

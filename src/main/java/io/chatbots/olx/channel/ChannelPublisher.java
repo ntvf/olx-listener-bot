@@ -21,10 +21,12 @@ import java.text.Normalizer;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -57,39 +59,49 @@ public class ChannelPublisher {
     private final ChannelRepository channelRepository;
     private final TelegramClient telegramClient;
     private final Duration postDelay;
-    private final int maxPostsPerTick;
+    /** Minimum spacing between two posts to the same channel, so the feed drips rather than bursts. */
+    private final Duration minPostInterval;
 
+    /**
+     * Posts at most one due offer per channel per tick, and only if the channel's last post is at
+     * least {@link #minPostInterval} old — so a burst of newly-due listings is spread out rather than
+     * dumped into the chat at once. Offers become due at their real publish time plus {@link #postDelay}.
+     */
     public void publishDue() {
-        Instant cutoff = Instant.now().minus(postDelay);
+        Instant now = Instant.now();
+        Instant cutoff = now.minus(postDelay);
+        Set<Long> handled = new HashSet<>();
         for (ChannelFeed feed : feedRepository.findByActiveTrue()) {
+            long chat = feed.getChannelChatId();
+            if (!handled.add(chat)) continue; // one message per channel per tick
             try {
-                publishFeed(feed, cutoff);
+                Instant lastPost = offerRepository.findMaxPostedAtByChannelChatId(chat);
+                if (lastPost != null && lastPost.isAfter(now.minus(minPostInterval))) continue;
+                publishOneDue(feed, cutoff);
             } catch (Exception e) {
-                log.error("Failed to publish feed {} to channel {}", feed.getId(), feed.getChannelChatId(), e);
+                log.error("Failed to publish feed {} to channel {}", feed.getId(), chat, e);
             }
         }
     }
 
-    private void publishFeed(ChannelFeed feed, Instant cutoff) {
+    /** Posts the single oldest due offer for the feed (owner-direct only), if any. */
+    private void publishOneDue(ChannelFeed feed, Instant cutoff) {
         // Precision gate: only owner-verdict listings that also advertise themselves as
         // owner-direct ("bezpośrednio") are published; an un-advertised owner is held back.
         List<FeedOffer> due = offerRepository
-                .findByFeedIdAndPostedAtIsNullAndVerdictAndDirectTrueAndFirstSeenBeforeOrderByFirstSeenAsc(
+                .findByFeedIdAndPostedAtIsNullAndVerdictAndDirectTrueAndPublishedAtBeforeOrderByPublishedAtAsc(
                         feed.getId(), AgencyDetector.Verdict.OWNER.name(), cutoff);
-        int posted = 0;
-        for (FeedOffer offer : due) {
-            if (posted >= maxPostsPerTick) break;
-            try {
-                send(feed, offer);
-            } catch (Exception e) {
-                // channel likely unreachable; keep posted_at null so the offer retries next tick
-                log.warn("Failed to post offer {} to channel {}", offer.getId(), feed.getChannelChatId(), e);
-                break;
-            }
-            offer.setPostedAt(Instant.now());
-            offerRepository.save(offer);
-            posted++;
+        if (due.isEmpty()) return;
+        FeedOffer offer = due.get(0);
+        try {
+            send(feed, offer);
+        } catch (Exception e) {
+            // channel likely unreachable; keep posted_at null so the offer retries next tick
+            log.warn("Failed to post offer {} to channel {}", offer.getId(), feed.getChannelChatId(), e);
+            return;
         }
+        offer.setPostedAt(Instant.now());
+        offerRepository.save(offer);
     }
 
     private void send(ChannelFeed feed, FeedOffer offer) throws Exception {

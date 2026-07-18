@@ -38,9 +38,9 @@ public class ChannelConfig {
                                              ChannelRepository channelRepository,
                                              TelegramClient telegramClient,
                                              @Value("${channel.post-delay-minutes:60}") long postDelayMinutes,
-                                             @Value("${channel.max-posts-per-tick:5}") int maxPostsPerTick) {
+                                             @Value("${channel.min-post-interval-minutes:10}") long minPostIntervalMinutes) {
         return new ChannelPublisher(feedRepository, offerRepository, channelRepository, telegramClient,
-                Duration.ofMinutes(postDelayMinutes), maxPostsPerTick);
+                Duration.ofMinutes(postDelayMinutes), Duration.ofMinutes(minPostIntervalMinutes));
     }
 
     @Bean

@@ -11,6 +11,7 @@ import org.telegram.telegrambots.meta.generics.TelegramClient;
 
 import java.math.BigDecimal;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
@@ -24,7 +25,6 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -35,7 +35,7 @@ class ChannelPublisherTest {
     private final TelegramClient telegramClient = mock(TelegramClient.class);
     private final ChannelPublisher publisher = new ChannelPublisher(
             feedRepository, offerRepository, mock(ChannelRepository.class),
-            telegramClient, Duration.ofMinutes(60), 5);
+            telegramClient, Duration.ofMinutes(60), Duration.ofMinutes(10));
 
     private static TelegramApiRequestException apiError(int code) {
         TelegramApiRequestException e = mock(TelegramApiRequestException.class);
@@ -45,7 +45,7 @@ class ChannelPublisherTest {
 
     private void queueDue(FeedOffer... offers) {
         when(feedRepository.findByActiveTrue()).thenReturn(List.of(feed()));
-        when(offerRepository.findByFeedIdAndPostedAtIsNullAndVerdictAndDirectTrueAndFirstSeenBeforeOrderByFirstSeenAsc(
+        when(offerRepository.findByFeedIdAndPostedAtIsNullAndVerdictAndDirectTrueAndPublishedAtBeforeOrderByPublishedAtAsc(
                 anyLong(), any(), any())).thenReturn(List.of(offers));
     }
 
@@ -176,22 +176,20 @@ class ChannelPublisherTest {
     }
 
     @Test
-    void fallsBackToTextWhenPhotoRejectedAndKeepsDrainingQueue() throws Exception {
+    void rejectedPhotoIsPostedAsTextNotStalled() throws Exception {
         when(offerRepository.findByFeedIdAndFirstSeenAfterAndPriceIsNotNullAndAreaM2IsNotNull(anyLong(), any()))
                 .thenReturn(List.of());
         FeedOffer badImage = offer().toBuilder().id(10L).imageUrl("https://dead.example/x.jpg").build();
-        FeedOffer nextInLine = offer().toBuilder().id(11L).imageUrl(null).build();
-        queueDue(badImage, nextInLine);
-        // Telegram rejects the dead image with a permanent 400
+        queueDue(badImage);
+        // Telegram rejects the dead image with a permanent 400 -> degrade to a text post
         TelegramApiRequestException rejected = apiError(400);
         when(telegramClient.execute(any(SendPhoto.class))).thenThrow(rejected);
 
         publisher.publishDue();
 
-        // rejected photo re-posted as text, and the following offer still goes out
-        verify(telegramClient, times(2)).execute(any(SendMessage.class));
+        // posted as text (so it doesn't block the queue), not left stuck at the head
+        verify(telegramClient).execute(any(SendMessage.class));
         assertNotNull(badImage.getPostedAt());
-        assertNotNull(nextInLine.getPostedAt());
     }
 
     @Test
@@ -208,5 +206,35 @@ class ChannelPublisherTest {
 
         verify(telegramClient, never()).execute(any(SendMessage.class));
         assertNull(offer.getPostedAt());
+    }
+
+    @Test
+    void postsAtMostOneOfferPerTick() throws Exception {
+        when(offerRepository.findByFeedIdAndFirstSeenAfterAndPriceIsNotNullAndAreaM2IsNotNull(anyLong(), any()))
+                .thenReturn(List.of());
+        FeedOffer first = offer().toBuilder().id(10L).imageUrl(null).build();
+        FeedOffer second = offer().toBuilder().id(11L).imageUrl(null).build();
+        queueDue(first, second);
+
+        publisher.publishDue();
+
+        // only the oldest due offer goes out this tick; the rest wait for the next one
+        verify(telegramClient).execute(any(SendMessage.class));
+        assertNotNull(first.getPostedAt());
+        assertNull(second.getPostedAt());
+    }
+
+    @Test
+    void skipsChannelWithinMinPostInterval() throws Exception {
+        FeedOffer due = offer().toBuilder().id(10L).imageUrl(null).build();
+        queueDue(due);
+        // last post to this channel was 3 minutes ago — below the 10-minute spacing
+        when(offerRepository.findMaxPostedAtByChannelChatId(anyLong()))
+                .thenReturn(Instant.now().minusSeconds(180));
+
+        publisher.publishDue();
+
+        verify(telegramClient, never()).execute(any(SendMessage.class));
+        assertNull(due.getPostedAt());
     }
 }

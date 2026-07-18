@@ -80,6 +80,10 @@ public class FeedOffer {
     @Column(name = "first_seen", nullable = false)
     private Instant firstSeen;
 
+    /** The listing's real publish time (from the OLX card), or first_seen when unknown; posts are scheduled from this. */
+    @Column(name = "published_at", nullable = false)
+    private Instant publishedAt;
+
     @Column(name = "posted_at")
     private Instant postedAt;
 }
