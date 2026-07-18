@@ -281,23 +281,27 @@ public class ListingEnricher {
         return null;
     }
 
-    /** Builds "City, District" from Otodom's reverse-geocoding ladder, most-specific last. */
+    /**
+     * Picks the <b>district</b> from Otodom's reverse-geocoding ladder, so it matches OLX's bare
+     * district naming ({@code "Włochy"}, {@code "Mokotów"}). Otodom's ladder goes
+     * voivodeship → city → district → residential; the narrowest level is a sub-area
+     * ("Nowe Włochy", "Stary Mokotów") that OLX never uses, which would split otherwise-identical
+     * districts across the two sources — and now across the district+rooms median segments. Falls
+     * back to the city, then the narrowest available, when no district level is present.
+     */
     private static String otodomLocation(JsonNode location) {
         String city = null;
-        String specific = null;
+        String district = null;
+        String narrowest = null;
         for (JsonNode loc : location.path("reverseGeocoding").path("locations")) {
             String level = loc.path("locationLevel").asText("");
             String name = StringUtils.trimToNull(loc.path("name").asText(null));
             if (name == null) continue;
             if (level.startsWith("city")) city = name;
-            specific = name; // ladder is ordered broad → narrow
+            else if (level.equals("district")) district = name;
+            narrowest = name; // ladder is ordered broad → narrow
         }
-        String result;
-        if (city != null && specific != null && !specific.equals(city)) {
-            result = city + ", " + specific;
-        } else {
-            result = city != null ? city : specific;
-        }
+        String result = district != null ? district : city != null ? city : narrowest;
         return result == null ? null : StringUtils.abbreviate(result, 255);
     }
 

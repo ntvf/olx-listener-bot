@@ -16,7 +16,6 @@ import org.telegram.telegrambots.meta.exceptions.TelegramApiRequestException;
 import org.telegram.telegrambots.meta.generics.TelegramClient;
 
 import java.math.BigDecimal;
-import java.math.MathContext;
 import java.math.RoundingMode;
 import java.text.Normalizer;
 import java.time.Duration;
@@ -24,6 +23,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -36,7 +36,14 @@ import java.util.regex.Pattern;
 @RequiredArgsConstructor
 public class ChannelPublisher {
 
-    static final Duration COMPARABLES_WINDOW = Duration.ofDays(30);
+    static final Duration COMPARABLES_WINDOW = Duration.ofDays(35);
+
+    /**
+     * The tight district+rooms segment is shown at a lower sample bar than the wider fallbacks:
+     * splitting by both district and room count thins each bucket, but a like-for-like median of
+     * even a handful of same-district same-size flats beats a large mixed one.
+     */
+    private static final int DISTRICT_ROOMS_MIN_SAMPLE = 6;
 
     /** OLX category URLs carry the search city as the path segment after wynajem/sprzedaz. */
     private static final Pattern CITY_IN_URL =
@@ -234,22 +241,80 @@ public class ChannelPublisher {
         return slug.isEmpty() ? null : slug;
     }
 
+    /**
+     * A price-context line built from same-feed comparables, narrowed as tightly as the sample
+     * allows: same district and room count first (the segment that also yields a meaningful median
+     * monthly total), then same district, then the whole feed. The first level with enough listings
+     * wins; only the tight level renders the median total, since mixing room counts would make an
+     * absolute-price median meaningless.
+     */
     private Optional<String> scoreLine(ChannelFeed feed, FeedOffer offer) {
-        if (offer.getAreaM2() == null) return Optional.empty();
-        List<BigDecimal> comparables = offerRepository
-                .findByFeedIdAndFirstSeenAfterAndPriceIsNotNullAndAreaM2IsNotNull(
-                        feed.getId(), Instant.now().minus(COMPARABLES_WINDOW))
-                .stream()
-                .filter(o -> !o.getId().equals(offer.getId()))
-                .filter(o -> o.getAreaM2().signum() > 0)
-                .map(o -> totalPrice(o).divide(o.getAreaM2(), MathContext.DECIMAL64))
-                .toList();
-        return RentalScorer.score(totalPrice(offer), offer.getAreaM2(), comparables)
-                .map(s -> String.format("📊 %s %s/m² · mediana %s (%s%d%%, n=%d)",
-                        s.pricePerM2().toPlainString(), displayCurrency(offer),
-                        s.medianPerM2().toPlainString(),
-                        s.diffPct() > 0 ? "+" : s.diffPct() < 0 ? "−" : "±",
-                        Math.abs(s.diffPct()), s.sampleSize()));
+        if (offer.getAreaM2() == null || offer.getAreaM2().signum() <= 0) return Optional.empty();
+        BigDecimal total = totalPrice(offer);
+        List<FeedOffer> pool = offerRepository.findByFeedIdAndFirstSeenAfterAndPriceIsNotNullAndAreaM2IsNotNull(
+                feed.getId(), Instant.now().minus(COMPARABLES_WINDOW));
+
+        if (offer.getLocation() != null && offer.getRooms() != null) {
+            Optional<RentalScorer.Score> s = RentalScorer.score(total, offer.getAreaM2(),
+                    comps(pool, offer, o -> Objects.equals(o.getLocation(), offer.getLocation())
+                            && Objects.equals(o.getRooms(), offer.getRooms())),
+                    DISTRICT_ROOMS_MIN_SAMPLE);
+            if (s.isPresent()) return Optional.of(renderSegment(offer, s.get()));
+        }
+        if (offer.getLocation() != null) {
+            Optional<RentalScorer.Score> s = RentalScorer.score(total, offer.getAreaM2(),
+                    comps(pool, offer, o -> Objects.equals(o.getLocation(), offer.getLocation())),
+                    RentalScorer.MIN_SAMPLE);
+            if (s.isPresent()) return Optional.of(renderPerM2(offer, s.get(), offer.getLocation()));
+        }
+        return RentalScorer.score(total, offer.getAreaM2(), comps(pool, offer, o -> true),
+                        RentalScorer.MIN_SAMPLE)
+                .map(s -> renderPerM2(offer, s, cityLabel(feed)));
+    }
+
+    /** Comparables in {@code pool} matching {@code filter}, excluding the offer itself. */
+    private static List<RentalScorer.Comp> comps(List<FeedOffer> pool, FeedOffer offer,
+                                                 java.util.function.Predicate<FeedOffer> filter) {
+        List<RentalScorer.Comp> out = new ArrayList<>();
+        for (FeedOffer o : pool) {
+            if (o.getId().equals(offer.getId()) || o.getAreaM2() == null || o.getAreaM2().signum() <= 0) {
+                continue;
+            }
+            if (filter.test(o)) out.add(new RentalScorer.Comp(totalPrice(o), o.getAreaM2()));
+        }
+        return out;
+    }
+
+    /** Tight district+rooms hit: per-m² comparison plus the segment's median monthly total. */
+    private String renderSegment(FeedOffer offer, RentalScorer.Score s) {
+        String cur = displayCurrency(offer);
+        return String.format("📊 %s %s/m² · mediana %s (%s)\n📊 mediana %s %s · %s %s · n=%d",
+                formatAmount(s.pricePerM2()), cur, formatAmount(s.medianPerM2()), signedPct(s.diffPct()),
+                formatAmount(s.medianTotal()), cur, roomsLabel(offer.getRooms()), offer.getLocation(),
+                s.sampleSize());
+    }
+
+    /** Fallback levels (district-only / whole feed): per-m² comparison with the scope labelled. */
+    private String renderPerM2(FeedOffer offer, RentalScorer.Score s, String scope) {
+        String cur = displayCurrency(offer);
+        return String.format("📊 %s %s/m² · mediana %s %s/m² · %s (n=%d, %s)",
+                formatAmount(s.pricePerM2()), cur, formatAmount(s.medianPerM2()), cur,
+                scope, s.sampleSize(), signedPct(s.diffPct()));
+    }
+
+    private static String signedPct(int pct) {
+        String sign = pct > 0 ? "+" : pct < 0 ? "−" : "±";
+        return sign + Math.abs(pct) + "%";
+    }
+
+    private static String roomsLabel(Integer rooms) {
+        if (rooms == null) return "";
+        return rooms == 1 ? "kawalerka" : rooms + " pok.";
+    }
+
+    private static String cityLabel(ChannelFeed feed) {
+        String city = cityFromUrl(feed.getFeedUrl());
+        return city == null ? "Warszawa" : StringUtils.capitalize(city);
     }
 
     private static BigDecimal totalPrice(FeedOffer offer) {

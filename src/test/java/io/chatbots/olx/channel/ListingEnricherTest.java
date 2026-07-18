@@ -135,7 +135,8 @@ class ListingEnricherTest {
                   "location":{"reverseGeocoding":{"locations":[
                     {"locationLevel":"voivodeship","name":"mazowieckie"},
                     {"locationLevel":"city_or_village","name":"Warszawa"},
-                    {"locationLevel":"district","name":"Śródmieście"}]}},
+                    {"locationLevel":"district","name":"Włochy"},
+                    {"locationLevel":"residential","name":"Nowe Włochy"}]}},
                   "owner":{"id":10293901,"type":"agency","name":"Exclusive Partners","phones":["+48570704752"]},
                   "contactDetails":{"phones":["+48789365761"]},
                   "description":"<p>Przedwojenna elegancja <b>bez</b> prowizji.</p>",
@@ -151,7 +152,8 @@ class ListingEnricherTest {
         assertEquals(0, e.extraRent().compareTo(BigDecimal.valueOf(1100)));
         assertEquals(0, e.areaM2().compareTo(new BigDecimal("56.96")));
         assertEquals(2, e.rooms());
-        assertEquals("Warszawa, Śródmieście", e.location());
+        // district level wins over the narrower "residential" sub-area, matching OLX's bare district
+        assertEquals("Włochy", e.location());
         assertTrue(e.sellerBusiness());
         assertEquals("10293901", e.sellerId());
         assertEquals("Exclusive Partners", e.advertiserName());

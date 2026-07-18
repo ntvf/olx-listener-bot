@@ -12,6 +12,8 @@ import org.telegram.telegrambots.meta.generics.TelegramClient;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.util.List;
+import java.util.stream.IntStream;
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -114,6 +116,63 @@ class ChannelPublisherTest {
 
         Channel noUsername = Channel.builder().chatId(-100L).username("  ").build();
         assertFalse(publisher.buildText(feed(), offer(), noUsername).contains("📢"));
+    }
+
+    private FeedOffer comp(long id, String location, Integer rooms, double total, double area) {
+        return FeedOffer.builder().id(id).feedId(1L)
+                .location(location).rooms(rooms)
+                .price(BigDecimal.valueOf(total)).areaM2(BigDecimal.valueOf(area))
+                .build();
+    }
+
+    private FeedOffer scoredOffer() {
+        return FeedOffer.builder().id(1L).feedId(1L)
+                .title("2 pokoje Mokotów").price(BigDecimal.valueOf(4000)).currency("PLN")
+                .areaM2(BigDecimal.valueOf(50)).rooms(2).location("Mokotów")
+                .url("https://www.olx.pl/d/oferta/x.html").build();
+    }
+
+    @Test
+    void scoreLineSegmentsByDistrictAndRoomsWithMedianTotal() {
+        // 6 same-district same-rooms comps at 5000/50 = 100/m²; offer at 80/m² = -20%
+        List<FeedOffer> pool = IntStream.rangeClosed(100, 105)
+                .mapToObj(i -> comp(i, "Mokotów", 2, 5000, 50)).toList();
+        when(offerRepository.findByFeedIdAndFirstSeenAfterAndPriceIsNotNullAndAreaM2IsNotNull(anyLong(), any()))
+                .thenReturn(pool);
+
+        String text = publisher.buildText(feed(), scoredOffer(), null);
+
+        assertTrue(text.contains("📊 80 zł/m² · mediana 100 (−20%)"), text);
+        assertTrue(text.contains("📊 mediana 5 000 zł · 2 pok. Mokotów · n=6"), text);
+    }
+
+    @Test
+    void scoreLineFallsBackToDistrictWhenRoomsBucketTooThin() {
+        // 4 same-rooms (below the district+rooms bar of 6) but 10 same-district in total
+        List<FeedOffer> pool = Stream.concat(
+                IntStream.rangeClosed(100, 103).mapToObj(i -> comp(i, "Mokotów", 2, 5000, 50)),
+                IntStream.rangeClosed(200, 205).mapToObj(i -> comp(i, "Mokotów", 3, 5000, 50))).toList();
+        when(offerRepository.findByFeedIdAndFirstSeenAfterAndPriceIsNotNullAndAreaM2IsNotNull(anyLong(), any()))
+                .thenReturn(pool);
+
+        String text = publisher.buildText(feed(), scoredOffer(), null);
+
+        // district-level per-m² line, no median-total line (mixed room counts)
+        assertTrue(text.contains("📊 80 zł/m² · mediana 100 zł/m² · Mokotów (n=10, −20%)"), text);
+        assertFalse(text.contains("mediana 5 000 zł"), text);
+    }
+
+    @Test
+    void scoreLineFallsBackToWholeFeedLabelledCity() {
+        // no same-district comps; 10 elsewhere -> whole-feed level, labelled from the feed city
+        List<FeedOffer> pool = IntStream.rangeClosed(300, 309)
+                .mapToObj(i -> comp(i, "Wola", 2, 5000, 50)).toList();
+        when(offerRepository.findByFeedIdAndFirstSeenAfterAndPriceIsNotNullAndAreaM2IsNotNull(anyLong(), any()))
+                .thenReturn(pool);
+
+        String text = publisher.buildText(feed(), scoredOffer(), null);
+
+        assertTrue(text.contains("· Warszawa (n=10, −20%)"), text);
     }
 
     @Test
