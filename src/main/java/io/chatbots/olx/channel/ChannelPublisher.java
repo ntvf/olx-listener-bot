@@ -64,8 +64,10 @@ public class ChannelPublisher {
     }
 
     private void publishFeed(ChannelFeed feed, Instant cutoff) {
+        // Precision gate: only owner-verdict listings that also advertise themselves as
+        // owner-direct ("bezpośrednio") are published; an un-advertised owner is held back.
         List<FeedOffer> due = offerRepository
-                .findByFeedIdAndPostedAtIsNullAndVerdictAndFirstSeenBeforeOrderByFirstSeenAsc(
+                .findByFeedIdAndPostedAtIsNullAndVerdictAndDirectTrueAndFirstSeenBeforeOrderByFirstSeenAsc(
                         feed.getId(), AgencyDetector.Verdict.OWNER.name(), cutoff);
         int posted = 0;
         for (FeedOffer offer : due) {

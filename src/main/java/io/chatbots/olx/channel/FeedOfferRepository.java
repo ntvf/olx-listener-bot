@@ -14,7 +14,7 @@ public interface FeedOfferRepository extends JpaRepository<FeedOffer, Long> {
     @Query("SELECT o.offerHash FROM FeedOffer o WHERE o.feedId = :feedId")
     Set<String> findHashesByFeedId(@Param("feedId") long feedId);
 
-    List<FeedOffer> findByFeedIdAndPostedAtIsNullAndVerdictAndFirstSeenBeforeOrderByFirstSeenAsc(
+    List<FeedOffer> findByFeedIdAndPostedAtIsNullAndVerdictAndDirectTrueAndFirstSeenBeforeOrderByFirstSeenAsc(
             long feedId, String verdict, Instant cutoff);
 
     List<FeedOffer> findByFeedIdAndFirstSeenAfterAndPriceIsNotNullAndAreaM2IsNotNull(

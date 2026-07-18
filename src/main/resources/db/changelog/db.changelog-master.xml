@@ -32,4 +32,20 @@
         </createIndex>
     </changeSet>
 
+    <changeSet id="5" author="tymur">
+        <comment>Owner-direct flag ("bezpośrednio") — precision gate for no-commission channel publishing</comment>
+        <addColumn tableName="feed_offers">
+            <column name="direct" type="boolean" defaultValueBoolean="false">
+                <constraints nullable="false"/>
+            </column>
+        </addColumn>
+        <!-- Backfill existing rows from the title only; descriptions were never stored. Excludes the
+             commission-waiver phrasing, which leans operator/agency rather than owner-direct. -->
+        <sql>
+            UPDATE feed_offers
+            SET direct = true
+            WHERE title ~* '(bezpo[śs]redni|bez\s+po[śs]rednik|prywatnie|od\s+w[łl]a[śs]cicie)'
+        </sql>
+    </changeSet>
+
 </databaseChangeLog>

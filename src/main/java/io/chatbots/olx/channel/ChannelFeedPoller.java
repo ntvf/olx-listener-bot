@@ -76,6 +76,8 @@ public class ChannelFeedPoller {
                     .phone(details.phone())
                     .advertiserName(details.advertiserName())
                     .verdict(verdict.name())
+                    .direct(AgencyDetector.isDirect(
+                            offer.getName(), details.description(), details.advertiserName()))
                     .imageUrl(details.imageUrl())
                     .firstSeen(now)
                     .postedAt(baseline ? now : null)

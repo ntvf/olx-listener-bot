@@ -43,7 +43,7 @@ class ChannelPublisherTest {
 
     private void queueDue(FeedOffer... offers) {
         when(feedRepository.findByActiveTrue()).thenReturn(List.of(feed()));
-        when(offerRepository.findByFeedIdAndPostedAtIsNullAndVerdictAndFirstSeenBeforeOrderByFirstSeenAsc(
+        when(offerRepository.findByFeedIdAndPostedAtIsNullAndVerdictAndDirectTrueAndFirstSeenBeforeOrderByFirstSeenAsc(
                 anyLong(), any(), any())).thenReturn(List.of(offers));
     }
 

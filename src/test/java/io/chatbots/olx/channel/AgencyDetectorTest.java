@@ -7,6 +7,8 @@ import org.junit.jupiter.api.Test;
 import java.time.Duration;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class AgencyDetectorTest {
 
@@ -226,5 +228,40 @@ class AgencyDetectorTest {
     void russianAgencyKeywordIsLikelyAgency() {
         assertEquals(Verdict.LIKELY_AGENCY,
                 AgencyDetector.classify("Сдам квартиру", "Работает агентство недвижимости", false, SellerActivity.NONE));
+    }
+
+    // --- isDirect: owner-direct publishing gate ------------------------------------
+
+    @Test
+    void directWhenTitleSaysBezposrednio() {
+        assertTrue(AgencyDetector.isDirect("Bezpośrednio 2 pokoje Mokotów", null, null));
+    }
+
+    @Test
+    void directWhenOnlyDescriptionSaysBezposrednio() {
+        assertTrue(AgencyDetector.isDirect("Wynajmę mieszkanie", "Ładne 2 pokoje, wynajem bezpośrednio od zaraz", null));
+    }
+
+    @Test
+    void directOnOwnerAndPrivatePhrasing() {
+        assertTrue(AgencyDetector.isDirect("Kawalerka", "Oferta prywatna, od właściciela", null));
+        assertTrue(AgencyDetector.isDirect("Mieszkanie", "Wynajem bez pośredników", null));
+    }
+
+    @Test
+    void bezProwizjiAloneIsNotDirect() {
+        // commission-waiver phrasing leans operator/agency — not an owner-direct signal
+        assertFalse(AgencyDetector.isDirect("Studio Centrum", "Bez prowizji, co-working w cenie", null));
+        assertFalse(AgencyDetector.isDirect("Nowe studio", "No commission, gym included", null));
+    }
+
+    @Test
+    void plainOwnerListingWithoutClaimIsNotDirect() {
+        assertFalse(AgencyDetector.isDirect("Wynajmę mieszkanie", "Przytulne 2 pokoje od 1 sierpnia", null));
+    }
+
+    @Test
+    void directIgnoresDiacriticsAndCase() {
+        assertTrue(AgencyDetector.isDirect("BEZPOSREDNIO kawalerka", null, null));
     }
 }

@@ -70,6 +70,10 @@ public class FeedOffer {
     @Column(length = 16)
     private String verdict;
 
+    /** True when the listing advertises itself as owner-direct ("bezpośrednio", "od właściciela"). */
+    @Column(nullable = false)
+    private boolean direct;
+
     @Column(name = "image_url", length = 2048)
     private String imageUrl;
 

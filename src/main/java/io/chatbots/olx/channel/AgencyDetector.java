@@ -35,6 +35,22 @@ public final class AgencyDetector {
     ));
 
     /**
+     * The "no middleman" subset of {@link #OWNER_STEMS}: phrases asserting the advertiser <b>is</b>
+     * the owner / not an intermediary. Deliberately excludes the commission-waiver phrases
+     * ("bez prowizji", "no commission") — those are also used by aparthotel/rent-a-room operators
+     * that waive the tenant fee without being the owner, so they read as agency, not owner. Used by
+     * {@link #isDirect} to gate a precision-first channel to genuinely owner-direct listings.
+     */
+    private static final List<String> DIRECT_STEMS = fold(List.of(
+            "bez posrednik", "bez posrednictw",
+            "od wlascicie", "wlascicie prywatn", "mieszkanie prywatn",
+            "oferta prywatn", "osoba prywatn", "prywatnie",
+            "bezposrednio od wlascicie", "wynajme bezposrednio", "bezposrednio",
+            "direct from owner", "private owner",
+            "vid vlasnyka", "власник", "собственник", "хозя"
+    ));
+
+    /**
      * Near-certain agency tells — any one hit is enough for {@link Verdict#AGENCY}. Includes
      * exclusive-listing wording, brokerage-contract wording, licence/management phrasing, agency
      * legal-entity suffixes, well-known franchise brands, and CRM/export watermarks (agencies
@@ -163,6 +179,24 @@ public final class AgencyDetector {
      * matching is insensitive to accents and ASCII transliteration. Punctuation is kept, letting
      * stems like "z o.o." and "re/max" match.
      */
+    /**
+     * True when the listing positively advertises itself as owner-direct / no-middleman — an
+     * explicit "bezpośrednio", "od właściciela", "prywatnie" (see {@link #DIRECT_STEMS}) in the
+     * title, description or advertiser name. Matched on folded stems like {@link #classify}.
+     *
+     * <p>Independent of the {@link Verdict}: a listing can be {@link Verdict#OWNER} (e.g. a
+     * long-tracked low-volume seller) without ever saying it. A precision-first channel publishes
+     * only offers that are both OWNER <i>and</i> direct, so a genuine but un-advertised owner is
+     * held back rather than a commission-waiving operator being let through.
+     */
+    public static boolean isDirect(String title, String description, String advertiserName) {
+        String text = fold(String.join(" ",
+                title == null ? "" : title,
+                description == null ? "" : description,
+                advertiserName == null ? "" : advertiserName));
+        return DIRECT_STEMS.stream().anyMatch(text::contains);
+    }
+
     static String fold(String s) {
         String n = Normalizer.normalize(s.toLowerCase(Locale.ROOT), Normalizer.Form.NFD)
                 .replaceAll("\\p{M}+", "")
