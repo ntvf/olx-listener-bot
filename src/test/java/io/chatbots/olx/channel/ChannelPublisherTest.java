@@ -35,7 +35,7 @@ class ChannelPublisherTest {
     private final TelegramClient telegramClient = mock(TelegramClient.class);
     private final ChannelPublisher publisher = new ChannelPublisher(
             feedRepository, offerRepository, mock(ChannelRepository.class),
-            telegramClient, Duration.ofMinutes(60), Duration.ofMinutes(10));
+            telegramClient, Duration.ofMinutes(60), Duration.ofMinutes(10), 22, 8);
 
     private static TelegramApiRequestException apiError(int code) {
         TelegramApiRequestException e = mock(TelegramApiRequestException.class);
@@ -222,6 +222,18 @@ class ChannelPublisherTest {
         verify(telegramClient).execute(any(SendMessage.class));
         assertNotNull(first.getPostedAt());
         assertNull(second.getPostedAt());
+    }
+
+    @Test
+    void nightWindowWrapsPastMidnight() {
+        // 22 -> 8 window: silent late night / early morning, audible during the day
+        assertTrue(ChannelPublisher.withinWindow(23, 22, 8));
+        assertTrue(ChannelPublisher.withinWindow(2, 22, 8));
+        assertTrue(ChannelPublisher.withinWindow(22, 22, 8));
+        assertFalse(ChannelPublisher.withinWindow(8, 22, 8));
+        assertFalse(ChannelPublisher.withinWindow(14, 22, 8));
+        // from == to disables silencing entirely
+        assertFalse(ChannelPublisher.withinWindow(3, 0, 0));
     }
 
     @Test

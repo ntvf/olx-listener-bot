@@ -38,9 +38,12 @@ public class ChannelConfig {
                                              ChannelRepository channelRepository,
                                              TelegramClient telegramClient,
                                              @Value("${channel.post-delay-minutes:60}") long postDelayMinutes,
-                                             @Value("${channel.min-post-interval-minutes:10}") long minPostIntervalMinutes) {
+                                             @Value("${channel.min-post-interval-minutes:10}") long minPostIntervalMinutes,
+                                             @Value("${channel.silent-from-hour:22}") int silentFromHour,
+                                             @Value("${channel.silent-to-hour:8}") int silentToHour) {
         return new ChannelPublisher(feedRepository, offerRepository, channelRepository, telegramClient,
-                Duration.ofMinutes(postDelayMinutes), Duration.ofMinutes(minPostIntervalMinutes));
+                Duration.ofMinutes(postDelayMinutes), Duration.ofMinutes(minPostIntervalMinutes),
+                silentFromHour, silentToHour);
     }
 
     @Bean

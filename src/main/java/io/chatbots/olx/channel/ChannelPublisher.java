@@ -20,6 +20,7 @@ import java.math.RoundingMode;
 import java.text.Normalizer;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -39,6 +40,9 @@ import java.util.regex.Pattern;
 public class ChannelPublisher {
 
     static final Duration COMPARABLES_WINDOW = Duration.ofDays(35);
+
+    /** The night (silent) window is evaluated in the channel's local (Warsaw) time, not server UTC. */
+    private static final ZoneId POST_ZONE = ZoneId.of("Europe/Warsaw");
 
     /**
      * The tight district+rooms segment is shown at a lower sample bar than the wider fallbacks:
@@ -61,6 +65,13 @@ public class ChannelPublisher {
     private final Duration postDelay;
     /** Minimum spacing between two posts to the same channel, so the feed drips rather than bursts. */
     private final Duration minPostInterval;
+    /**
+     * Night window [from, to) in Warsaw local hours during which posts are still sent but with
+     * notifications disabled (silent), so overnight listings land without buzzing subscribers.
+     * Wraps past midnight when from &gt; to (e.g. 22→8); from==to disables the silencing.
+     */
+    private final int silentFromHour;
+    private final int silentToHour;
 
     /**
      * Posts at most one due offer per channel per tick, and only if the channel's last post is at
@@ -108,14 +119,27 @@ public class ChannelPublisher {
         Channel channel = channelRepository.findById(feed.getChannelChatId()).orElse(null);
         String text = buildText(feed, offer, channel);
         InlineKeyboardMarkup markup = subscribeButton(channel);
-        if (offer.getImageUrl() != null && trySendPhoto(feed, offer, text, markup)) {
+        boolean silent = silentNow(Instant.now());
+        if (offer.getImageUrl() != null && trySendPhoto(feed, offer, text, markup, silent)) {
             return;
         }
         telegramClient.execute(SendMessage.builder()
                 .chatId(feed.getChannelChatId())
                 .text(text)
                 .replyMarkup(markup)
+                .disableNotification(silent)
                 .build());
+    }
+
+    /** True when the given instant falls in the Warsaw-local night window, so posts should be silent. */
+    boolean silentNow(Instant now) {
+        return withinWindow(now.atZone(POST_ZONE).getHour(), silentFromHour, silentToHour);
+    }
+
+    /** Whether {@code hour} is inside [from, to), wrapping past midnight when from &gt; to; from==to is off. */
+    static boolean withinWindow(int hour, int from, int to) {
+        if (from == to) return false;
+        return from < to ? hour >= from && hour < to : hour >= from || hour < to;
     }
 
     /**
@@ -125,14 +149,15 @@ public class ChannelPublisher {
      * so retrying the photo would stall every owner offer queued behind it. Transient failures
      * (network, 5xx, rate limits) propagate so the offer simply retries on the next tick.
      */
-    private boolean trySendPhoto(ChannelFeed feed, FeedOffer offer, String text, InlineKeyboardMarkup markup)
-            throws Exception {
+    private boolean trySendPhoto(ChannelFeed feed, FeedOffer offer, String text, InlineKeyboardMarkup markup,
+                                 boolean silent) throws Exception {
         try {
             telegramClient.execute(SendPhoto.builder()
                     .chatId(feed.getChannelChatId())
                     .photo(new InputFile(offer.getImageUrl()))
                     .caption(StringUtils.abbreviate(text, 1024))
                     .replyMarkup(markup)
+                    .disableNotification(silent)
                     .build());
             return true;
         } catch (TelegramApiRequestException e) {
