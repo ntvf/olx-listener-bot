@@ -12,6 +12,7 @@ import org.telegram.telegrambots.meta.api.objects.InputFile;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardRow;
+import org.telegram.telegrambots.meta.exceptions.TelegramApiRequestException;
 import org.telegram.telegrambots.meta.generics.TelegramClient;
 
 import java.math.BigDecimal;
@@ -86,19 +87,39 @@ public class ChannelPublisher {
         Channel channel = channelRepository.findById(feed.getChannelChatId()).orElse(null);
         String text = buildText(feed, offer, channel);
         InlineKeyboardMarkup markup = subscribeButton(channel);
-        if (offer.getImageUrl() != null) {
+        if (offer.getImageUrl() != null && trySendPhoto(feed, offer, text, markup)) {
+            return;
+        }
+        telegramClient.execute(SendMessage.builder()
+                .chatId(feed.getChannelChatId())
+                .text(text)
+                .replyMarkup(markup)
+                .build());
+    }
+
+    /**
+     * Attempts a photo post. Returns {@code false} — signalling a text-only fallback — when Telegram
+     * rejects the image itself with a 400 (e.g. the listing's image URL is dead or serves a web page,
+     * not an image: "wrong type of the web page content"). That failure is permanent for this offer,
+     * so retrying the photo would stall every owner offer queued behind it. Transient failures
+     * (network, 5xx, rate limits) propagate so the offer simply retries on the next tick.
+     */
+    private boolean trySendPhoto(ChannelFeed feed, FeedOffer offer, String text, InlineKeyboardMarkup markup)
+            throws Exception {
+        try {
             telegramClient.execute(SendPhoto.builder()
                     .chatId(feed.getChannelChatId())
                     .photo(new InputFile(offer.getImageUrl()))
                     .caption(StringUtils.abbreviate(text, 1024))
                     .replyMarkup(markup)
                     .build());
-        } else {
-            telegramClient.execute(SendMessage.builder()
-                    .chatId(feed.getChannelChatId())
-                    .text(text)
-                    .replyMarkup(markup)
-                    .build());
+            return true;
+        } catch (TelegramApiRequestException e) {
+            if (e.getErrorCode() != null && e.getErrorCode() == 400) {
+                log.warn("Photo rejected for offer {}, posting as text instead: {}", offer.getId(), e.getMessage());
+                return false;
+            }
+            throw e;
         }
     }
 

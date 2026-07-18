@@ -17,7 +17,7 @@ import java.time.Instant;
 @Entity
 @Table(name = "feed_offers")
 @Data
-@Builder
+@Builder(toBuilder = true)
 @NoArgsConstructor
 @AllArgsConstructor
 public class FeedOffer {
