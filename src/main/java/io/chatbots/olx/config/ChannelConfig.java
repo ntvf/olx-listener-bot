@@ -41,7 +41,7 @@ public class ChannelConfig {
                                              TelegramClient telegramClient,
                                              ListingEnricher enricher,
                                              @Value("${channel.post-delay-minutes:60}") long postDelayMinutes,
-                                             @Value("${channel.min-post-interval-minutes:10}") long minPostIntervalMinutes,
+                                             @Value("${channel.min-post-interval-minutes:60}") long minPostIntervalMinutes,
                                              @Value("${channel.silent-from-hour:22}") int silentFromHour,
                                              @Value("${channel.silent-to-hour:8}") int silentToHour) {
         return new ChannelPublisher(feedRepository, offerRepository, channelRepository, telegramClient,

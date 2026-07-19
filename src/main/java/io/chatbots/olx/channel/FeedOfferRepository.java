@@ -14,8 +14,13 @@ public interface FeedOfferRepository extends JpaRepository<FeedOffer, Long> {
     @Query("SELECT o.offerHash FROM FeedOffer o WHERE o.feedId = :feedId")
     Set<String> findHashesByFeedId(@Param("feedId") long feedId);
 
-    List<FeedOffer> findByFeedIdAndPostedAtIsNullAndVerdictAndDirectTrueAndPublishedAtBeforeOrderByPublishedAtAsc(
-            long feedId, String verdict, Instant cutoff);
+    @Query("SELECT o FROM FeedOffer o WHERE o.feedId = :feedId AND o.postedAt IS NULL "
+            + "AND o.verdict = :verdict AND o.direct = true "
+            + "AND COALESCE(o.listingCreatedAt, o.publishedAt) <= :cutoff "
+            + "ORDER BY COALESCE(o.listingCreatedAt, o.publishedAt) ASC")
+    List<FeedOffer> findDueOwnerOffers(@Param("feedId") long feedId,
+                                       @Param("verdict") String verdict,
+                                       @Param("cutoff") Instant cutoff);
 
     @Query("SELECT MAX(o.postedAt) FROM FeedOffer o, ChannelFeed f "
             + "WHERE o.feedId = f.id AND f.channelChatId = :chatId")

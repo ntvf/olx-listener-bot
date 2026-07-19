@@ -26,6 +26,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -47,8 +48,7 @@ class ChannelPublisherTest {
 
     private void queueDue(FeedOffer... offers) {
         when(feedRepository.findByActiveTrue()).thenReturn(List.of(feed()));
-        when(offerRepository.findByFeedIdAndPostedAtIsNullAndVerdictAndDirectTrueAndPublishedAtBeforeOrderByPublishedAtAsc(
-                anyLong(), any(), any())).thenReturn(List.of(offers));
+        when(offerRepository.findDueOwnerOffers(anyLong(), any(), any())).thenReturn(List.of(offers));
     }
 
     private ChannelFeed feed() {
@@ -212,19 +212,47 @@ class ChannelPublisherTest {
     }
 
     @Test
-    void postsAtMostOneOfferPerTick() throws Exception {
+    void burstPostsAllDueButOnlyFirstNotifies() throws Exception {
         when(offerRepository.findByFeedIdAndFirstSeenAfterAndPriceIsNotNullAndAreaM2IsNotNull(anyLong(), any()))
                 .thenReturn(List.of());
+        // night window disabled (from==to) so the first message deterministically notifies
+        ChannelPublisher p = new ChannelPublisher(feedRepository, offerRepository, mock(ChannelRepository.class),
+                telegramClient, enricher, Duration.ofMinutes(60), Duration.ofMinutes(60), 0, 0);
+        FeedOffer first = offer().toBuilder().id(10L).imageUrl(null).build();
+        FeedOffer second = offer().toBuilder().id(11L).imageUrl(null).build();
+        FeedOffer third = offer().toBuilder().id(12L).imageUrl(null).build();
+        queueDue(first, second, third);
+
+        p.publishDue();
+
+        ArgumentCaptor<SendMessage> sent = ArgumentCaptor.forClass(SendMessage.class);
+        verify(telegramClient, times(3)).execute(sent.capture());
+        List<SendMessage> messages = sent.getAllValues();
+        assertFalse(messages.get(0).getDisableNotification());
+        assertTrue(messages.get(1).getDisableNotification());
+        assertTrue(messages.get(2).getDisableNotification());
+        assertNotNull(first.getPostedAt());
+        assertNotNull(second.getPostedAt());
+        assertNotNull(third.getPostedAt());
+    }
+
+    @Test
+    void burstDuringNightIsFullySilent() throws Exception {
+        when(offerRepository.findByFeedIdAndFirstSeenAfterAndPriceIsNotNullAndAreaM2IsNotNull(anyLong(), any()))
+                .thenReturn(List.of());
+        // night window covers the whole day (from=0,to=24 -> always night) so nothing buzzes
+        ChannelPublisher p = new ChannelPublisher(feedRepository, offerRepository, mock(ChannelRepository.class),
+                telegramClient, enricher, Duration.ofMinutes(60), Duration.ofMinutes(60), 0, 24);
         FeedOffer first = offer().toBuilder().id(10L).imageUrl(null).build();
         FeedOffer second = offer().toBuilder().id(11L).imageUrl(null).build();
         queueDue(first, second);
 
-        publisher.publishDue();
+        p.publishDue();
 
-        // only the oldest due offer goes out this tick; the rest wait for the next one
-        verify(telegramClient).execute(any(SendMessage.class));
-        assertNotNull(first.getPostedAt());
-        assertNull(second.getPostedAt());
+        ArgumentCaptor<SendMessage> sent = ArgumentCaptor.forClass(SendMessage.class);
+        verify(telegramClient, times(2)).execute(sent.capture());
+        assertTrue(sent.getAllValues().get(0).getDisableNotification());
+        assertTrue(sent.getAllValues().get(1).getDisableNotification());
     }
 
     @Test

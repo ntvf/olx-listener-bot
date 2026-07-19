@@ -75,9 +75,9 @@ public class ChannelPublisher {
     private final int silentToHour;
 
     /**
-     * Posts at most one due offer per channel per tick, and only if the channel's last post is at
-     * least {@link #minPostInterval} old — so a burst of newly-due listings is spread out rather than
-     * dumped into the chat at once. Offers become due at their real publish time plus {@link #postDelay}.
+     * Once per {@link #minPostInterval} per channel, posts every listing that is at least
+     * {@link #postDelay} old (by real creation time) as a single burst. Only the first message of a
+     * burst notifies; the rest are silent, so a burst is one buzz. Owner-direct listings only.
      */
     public void publishDue() {
         Instant now = Instant.now();
@@ -85,43 +85,40 @@ public class ChannelPublisher {
         Set<Long> handled = new HashSet<>();
         for (ChannelFeed feed : feedRepository.findByActiveTrue()) {
             long chat = feed.getChannelChatId();
-            if (!handled.add(chat)) continue; // one message per channel per tick
+            if (!handled.add(chat)) continue;
             try {
                 Instant lastPost = offerRepository.findMaxPostedAtByChannelChatId(chat);
                 if (lastPost != null && lastPost.isAfter(now.minus(minPostInterval))) continue;
-                publishOneDue(feed, cutoff);
+                publishBurst(feed, cutoff);
             } catch (Exception e) {
                 log.error("Failed to publish feed {} to channel {}", feed.getId(), chat, e);
             }
         }
     }
 
-    /** Posts the single oldest due offer for the feed (owner-direct only), if any. */
-    private void publishOneDue(ChannelFeed feed, Instant cutoff) {
-        // Precision gate: only owner-verdict listings that also advertise themselves as
-        // owner-direct ("bezpośrednio") are published; an un-advertised owner is held back.
-        List<FeedOffer> due = offerRepository
-                .findByFeedIdAndPostedAtIsNullAndVerdictAndDirectTrueAndPublishedAtBeforeOrderByPublishedAtAsc(
-                        feed.getId(), AgencyDetector.Verdict.OWNER.name(), cutoff);
-        if (due.isEmpty()) return;
-        FeedOffer offer = due.get(0);
-        refreshOfferIfRentImplausible(offer);
-        try {
-            send(feed, offer);
-        } catch (Exception e) {
-            // channel likely unreachable; keep posted_at null so the offer retries next tick
-            log.warn("Failed to post offer {} to channel {}", offer.getId(), feed.getChannelChatId(), e);
-            return;
+    private void publishBurst(ChannelFeed feed, Instant cutoff) {
+        List<FeedOffer> due = offerRepository.findDueOwnerOffers(
+                feed.getId(), AgencyDetector.Verdict.OWNER.name(), cutoff);
+        boolean alreadyNotified = false;
+        for (FeedOffer offer : due) {
+            refreshOfferIfRentImplausible(offer);
+            boolean silent = alreadyNotified || silentNow(Instant.now());
+            try {
+                send(feed, offer, silent);
+            } catch (Exception e) {
+                log.warn("Failed to post offer {} to channel {}", offer.getId(), feed.getChannelChatId(), e);
+                continue;
+            }
+            alreadyNotified = alreadyNotified || !silent;
+            offer.setPostedAt(Instant.now());
+            offerRepository.save(offer);
         }
-        offer.setPostedAt(Instant.now());
-        offerRepository.save(offer);
     }
 
-    private void send(ChannelFeed feed, FeedOffer offer) throws Exception {
+    private void send(ChannelFeed feed, FeedOffer offer, boolean silent) throws Exception {
         Channel channel = channelRepository.findById(feed.getChannelChatId()).orElse(null);
         String text = buildText(feed, offer, channel);
         InlineKeyboardMarkup markup = subscribeButton(channel);
-        boolean silent = silentNow(Instant.now());
         if (offer.getImageUrl() != null && trySendPhoto(feed, offer, text, markup, silent)) {
             return;
         }
