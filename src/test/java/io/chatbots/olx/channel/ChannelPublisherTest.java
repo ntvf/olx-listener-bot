@@ -4,6 +4,7 @@ import io.chatbots.olx.channel.entity.Channel;
 import io.chatbots.olx.channel.entity.ChannelFeed;
 import io.chatbots.olx.channel.entity.FeedOffer;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
 import org.telegram.telegrambots.meta.api.methods.send.SendPhoto;
 import org.telegram.telegrambots.meta.exceptions.TelegramApiRequestException;
@@ -33,9 +34,10 @@ class ChannelPublisherTest {
     private final FeedOfferRepository offerRepository = mock(FeedOfferRepository.class);
     private final ChannelFeedRepository feedRepository = mock(ChannelFeedRepository.class);
     private final TelegramClient telegramClient = mock(TelegramClient.class);
+    private final ListingEnricher enricher = mock(ListingEnricher.class);
     private final ChannelPublisher publisher = new ChannelPublisher(
             feedRepository, offerRepository, mock(ChannelRepository.class),
-            telegramClient, Duration.ofMinutes(60), Duration.ofMinutes(10), 22, 8);
+            telegramClient, enricher, Duration.ofMinutes(60), Duration.ofMinutes(10), 22, 8);
 
     private static TelegramApiRequestException apiError(int code) {
         TelegramApiRequestException e = mock(TelegramApiRequestException.class);
@@ -235,6 +237,84 @@ class ChannelPublisherTest {
         assertFalse(ChannelPublisher.withinWindow(14, 22, 8));
         // from == to disables silencing entirely
         assertFalse(ChannelPublisher.withinWindow(3, 0, 0));
+    }
+
+    @Test
+    void dropsCzynszAtOrAboveRent() {
+        when(offerRepository.findByFeedIdAndFirstSeenAfterAndPriceIsNotNullAndAreaM2IsNotNull(anyLong(), any()))
+                .thenReturn(List.of());
+        // czynsz == rent (deposit mistyped into the field) and an absurd czynsz are both ignored:
+        // the total is just the rent, with no "+ czynsz" breakdown
+        FeedOffer equalToRent = offer().toBuilder().price(BigDecimal.valueOf(6000))
+                .extraRent(BigDecimal.valueOf(6000)).build();
+        FeedOffer absurd = offer().toBuilder().price(BigDecimal.valueOf(5000))
+                .extraRent(BigDecimal.valueOf(136931)).build();
+
+        String t1 = publisher.buildText(feed(), equalToRent, null);
+        assertTrue(t1.contains("💰 6 000 zł"), t1);
+        assertFalse(t1.contains("czynsz"), t1);
+
+        String t2 = publisher.buildText(feed(), absurd, null);
+        assertTrue(t2.contains("💰 5 000 zł"), t2);
+        assertFalse(t2.contains("czynsz"), t2);
+    }
+
+    @Test
+    void keepsCzynszBelowRent() {
+        when(offerRepository.findByFeedIdAndFirstSeenAfterAndPriceIsNotNullAndAreaM2IsNotNull(anyLong(), any()))
+                .thenReturn(List.of());
+        // the base offer() has a plausible 2800 + 400 czynsz -> shown, total 3200
+        String text = publisher.buildText(feed(), offer(), null);
+        assertTrue(text.contains("💰 3 200 zł (2 800 + 400 czynsz)"), text);
+    }
+
+    @Test
+    void implausibleCzynszDoesNotInflateOwnVerdict() {
+        // 6 same-district same-rooms comps at 6000 total; offer's stored 6000+6000 must NOT read as +100%
+        List<FeedOffer> pool = IntStream.rangeClosed(100, 105)
+                .mapToObj(i -> comp(i, "Mokotów", 2, 6000, 50)).toList();
+        when(offerRepository.findByFeedIdAndFirstSeenAfterAndPriceIsNotNullAndAreaM2IsNotNull(anyLong(), any()))
+                .thenReturn(pool);
+        FeedOffer bogus = scoredOffer().toBuilder().price(BigDecimal.valueOf(6000))
+                .extraRent(BigDecimal.valueOf(6000)).build();
+
+        String text = publisher.buildText(feed(), bogus, null);
+
+        assertTrue(text.contains("📊 ±0% 🟡 · 6 000 vs 6 000 zł · n=6"), text);
+        assertFalse(text.contains("12 000"), text);
+    }
+
+    @Test
+    void reEnrichesImplausibleRentBeforePublishing() throws Exception {
+        when(offerRepository.findByFeedIdAndFirstSeenAfterAndPriceIsNotNullAndAreaM2IsNotNull(anyLong(), any()))
+                .thenReturn(List.of());
+        FeedOffer stale = offer().toBuilder().id(10L).imageUrl(null)
+                .price(BigDecimal.valueOf(6000)).extraRent(BigDecimal.valueOf(6000)).build();
+        queueDue(stale);
+        // by publish time the poster has corrected czynsz to 1250; re-fetch recovers it
+        when(enricher.enrich(stale.getUrl())).thenReturn(ListingEnricher.Enriched.builder()
+                .price(BigDecimal.valueOf(6000)).currency("PLN").extraRent(BigDecimal.valueOf(1250)).build());
+
+        publisher.publishDue();
+
+        verify(enricher).enrich(stale.getUrl());
+        assertEquals(BigDecimal.valueOf(1250), stale.getExtraRent());
+        ArgumentCaptor<SendMessage> sent = ArgumentCaptor.forClass(SendMessage.class);
+        verify(telegramClient).execute(sent.capture());
+        assertTrue(sent.getValue().getText().contains("💰 7 250 zł (6 000 + 1 250 czynsz)"),
+                sent.getValue().getText());
+    }
+
+    @Test
+    void doesNotReEnrichPlausibleRent() throws Exception {
+        when(offerRepository.findByFeedIdAndFirstSeenAfterAndPriceIsNotNullAndAreaM2IsNotNull(anyLong(), any()))
+                .thenReturn(List.of());
+        FeedOffer ok = offer().toBuilder().id(10L).imageUrl(null).build(); // 2800 + 400, plausible
+        queueDue(ok);
+
+        publisher.publishDue();
+
+        verify(enricher, never()).enrich(any());
     }
 
     @Test

@@ -62,6 +62,8 @@ public class ChannelPublisher {
     private final FeedOfferRepository offerRepository;
     private final ChannelRepository channelRepository;
     private final TelegramClient telegramClient;
+    /** Used to re-fetch a listing at publish time when its stored czynsz looks wrong. */
+    private final ListingEnricher enricher;
     private final Duration postDelay;
     /** Minimum spacing between two posts to the same channel, so the feed drips rather than bursts. */
     private final Duration minPostInterval;
@@ -104,6 +106,7 @@ public class ChannelPublisher {
                         feed.getId(), AgencyDetector.Verdict.OWNER.name(), cutoff);
         if (due.isEmpty()) return;
         FeedOffer offer = due.get(0);
+        refreshImplausibleRent(offer);
         try {
             send(feed, offer);
         } catch (Exception e) {
@@ -187,9 +190,10 @@ public class ChannelPublisher {
         if (offer.getPrice() != null) {
             // the true monthly total leads (it is also what the score compares); breakdown in parens
             sb.append("💰 ").append(formatAmount(totalPrice(offer))).append(' ').append(displayCurrency(offer));
-            if (offer.getExtraRent() != null && offer.getExtraRent().signum() > 0) {
+            BigDecimal czynsz = plausibleExtraRent(offer);
+            if (czynsz != null) {
                 sb.append(" (").append(formatAmount(offer.getPrice()))
-                        .append(" + ").append(formatAmount(offer.getExtraRent())).append(" czynsz)");
+                        .append(" + ").append(formatAmount(czynsz)).append(" czynsz)");
             }
             scoreLine(feed, offer).ifPresent(line -> sb.append('\n').append(line));
             sb.append('\n');
@@ -374,8 +378,48 @@ public class ChannelPublisher {
     }
 
     private static BigDecimal totalPrice(FeedOffer offer) {
-        BigDecimal extra = offer.getExtraRent() == null ? BigDecimal.ZERO : offer.getExtraRent();
-        return offer.getPrice().add(extra);
+        BigDecimal extra = plausibleExtraRent(offer);
+        return extra == null ? offer.getPrice() : offer.getPrice().add(extra);
+    }
+
+    /**
+     * The czynsz to trust for display and the median, or {@code null} to ignore it. A real czynsz
+     * is an add-on strictly below the base rent; posters routinely misfill the field with the
+     * deposit (kaucja), a duplicate of the rent, or an absurd number — all of which land at or above
+     * the rent. Dropping those keeps the 💰 total honest and, since every comparable's total flows
+     * through {@link #totalPrice}, stops one bogus row from poisoning the comparables median.
+     */
+    private static BigDecimal plausibleExtraRent(FeedOffer offer) {
+        BigDecimal extra = offer.getExtraRent();
+        if (extra == null || extra.signum() <= 0 || offer.getPrice() == null) return null;
+        return extra.compareTo(offer.getPrice()) < 0 ? extra : null;
+    }
+
+    /**
+     * When the stored czynsz is implausible (≥ rent), re-fetch the listing once at publish time and
+     * refresh the money fields. The usual cause is a value the poster corrected minutes after we first
+     * scraped (e.g. the deposit mistyped into the czynsz field); by publish time most are fixed, so
+     * this recovers the real czynsz. If the fresh value is still implausible {@link #plausibleExtraRent}
+     * drops it, so the post never shows a bogus total either way. Best-effort — a failed fetch or
+     * missing price leaves the stored values untouched.
+     */
+    private void refreshImplausibleRent(FeedOffer offer) {
+        BigDecimal extra = offer.getExtraRent();
+        boolean implausible = extra != null && extra.signum() > 0
+                && (offer.getPrice() == null || extra.compareTo(offer.getPrice()) >= 0);
+        if (!implausible) return;
+        try {
+            ListingEnricher.Enriched fresh = enricher.enrich(offer.getUrl());
+            if (fresh.price() == null) return; // fetch failed or markup changed — keep what we have
+            log.info("Offer {}: refreshed implausible czynsz {} (rent {}) -> czynsz {} (rent {})",
+                    offer.getId(), offer.getExtraRent(), offer.getPrice(), fresh.extraRent(), fresh.price());
+            offer.setPrice(fresh.price());
+            if (fresh.currency() != null) offer.setCurrency(fresh.currency());
+            offer.setExtraRent(fresh.extraRent());
+            offerRepository.save(offer);
+        } catch (Exception e) {
+            log.warn("Failed to refresh czynsz for offer {}: {}", offer.getId(), e.toString());
+        }
     }
 
     private static String displayCurrency(FeedOffer offer) {
