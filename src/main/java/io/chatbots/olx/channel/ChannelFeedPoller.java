@@ -37,6 +37,7 @@ public class ChannelFeedPoller {
     private final FeedOfferRepository offerRepository;
     private final OlxGrabber grabber;
     private final ListingEnricher enricher;
+    private final Duration maxListingAge;
 
     public void pollAll() {
         for (ChannelFeed feed : feedRepository.findByActiveTrue()) {
@@ -66,6 +67,8 @@ public class ChannelFeedPoller {
                     details.sellerBusiness(), activity);
 
             Instant now = Instant.now();
+            boolean bumpedOldListing = details.createdAt() != null
+                    && Duration.between(details.createdAt(), now).compareTo(maxListingAge) > 0;
             offerRepository.save(FeedOffer.builder()
                     .feedId(feed.getId())
                     .offerHash(hash)
@@ -86,8 +89,9 @@ public class ChannelFeedPoller {
                             offer.getName(), details.description(), details.advertiserName()))
                     .imageUrl(details.imageUrl())
                     .firstSeen(now)
+                    .listingCreatedAt(details.createdAt())
                     .publishedAt(publishInstant(offer.getUpdatedAt(), now))
-                    .postedAt(baseline ? now : null)
+                    .postedAt(baseline || bumpedOldListing ? now : null)
                     .build());
             stored++;
             pause();

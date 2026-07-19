@@ -3,6 +3,7 @@ package io.chatbots.olx.grabber;
 import lombok.Builder;
 import lombok.Data;
 
+import java.time.Instant;
 import java.time.LocalDateTime;
 
 @Data
@@ -13,4 +14,5 @@ public class Offer {
     private String content;
     private boolean promoted;
     private LocalDateTime updatedAt;
+    private Instant createdAt;
 }

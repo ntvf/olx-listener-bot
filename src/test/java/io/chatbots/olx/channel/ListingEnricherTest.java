@@ -4,6 +4,7 @@ import org.jsoup.Jsoup;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -241,5 +242,16 @@ class ListingEnricherTest {
         assertEquals(0, ListingEnricher.toNumber("3 200").compareTo(BigDecimal.valueOf(3200)));
         assertEquals(0, ListingEnricher.toNumber("30,5").compareTo(new BigDecimal("30.5")));
         assertNull(ListingEnricher.toNumber("abc"));
+    }
+
+    @Test
+    void creationTimeParsesOlxOffsetAndOtodomZulu() {
+        // OLX ships a local offset, Otodom a Zulu time — both resolve to the same instant
+        assertEquals(Instant.parse("2026-07-19T14:23:58Z"),
+                ListingEnricher.toInstant("2026-07-19T16:23:58+02:00"));
+        assertEquals(Instant.parse("2026-07-19T19:09:58Z"),
+                ListingEnricher.toInstant("2026-07-19T19:09:58Z"));
+        assertNull(ListingEnricher.toInstant(null));
+        assertNull(ListingEnricher.toInstant("not-a-date"));
     }
 }

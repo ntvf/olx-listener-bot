@@ -10,6 +10,8 @@ import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 
 import java.math.BigDecimal;
+import java.time.Instant;
+import java.time.OffsetDateTime;
 import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -48,7 +50,7 @@ public class ListingEnricher {
                            BigDecimal areaM2, Integer rooms, String location,
                            String sellerId, Boolean sellerBusiness,
                            String description, String imageUrl,
-                           String phone, String advertiserName) {
+                           String phone, String advertiserName, Instant createdAt) {
     }
 
     public Enriched enrich(String url) {
@@ -84,6 +86,7 @@ public class ListingEnricher {
         Enriched.EnrichedBuilder b = base.toBuilder();
         if (base.advertiserName() == null && id.sellerName() != null) b.advertiserName(id.sellerName());
         if (base.sellerBusiness() == null && id.business() != null) b.sellerBusiness(id.business());
+        if (base.createdAt() == null && id.createdTime() != null) b.createdAt(toInstant(id.createdTime()));
         if (harvestPhones && base.phone() == null && id.hasPhone() && id.offerId() != null) {
             String phone = normalizePhone(fetchOlxPhone(url, id.offerId()));
             if (phone != null) b.phone(phone);
@@ -92,7 +95,8 @@ public class ListingEnricher {
     }
 
     /** The advertiser identity OLX ships in its prerendered Redux state, not in the visible markup. */
-    record OlxIdentity(String sellerName, Boolean business, String offerId, boolean hasPhone) {
+    record OlxIdentity(String sellerName, Boolean business, String offerId, boolean hasPhone,
+                       String createdTime) {
     }
 
     /**
@@ -116,7 +120,8 @@ public class ListingEnricher {
                 boolean hasPhone = ad.path("contact").path("phone").asBoolean(false);
                 Boolean business = ad.has("isBusiness") ? ad.get("isBusiness").asBoolean() : null;
                 String name = StringUtils.trimToNull(ad.path("user").path("name").asText(null));
-                return new OlxIdentity(name, business, offerId, hasPhone);
+                String createdTime = StringUtils.trimToNull(ad.path("createdTime").asText(null));
+                return new OlxIdentity(name, business, offerId, hasPhone, createdTime);
             } catch (Exception e) {
                 log.debug("Failed to parse OLX __PRERENDERED_STATE__", e);
                 return null;
@@ -242,6 +247,7 @@ public class ListingEnricher {
                 }
             }
             out.currency("PLN");
+            out.createdAt(toInstant(ad.path("createdAt").asText(null)));
 
             out.location(otodomLocation(ad.path("location")));
 
@@ -365,6 +371,15 @@ public class ListingEnricher {
             sb.append(li.text()).append(' ');
         }
         return sb.toString();
+    }
+
+    static Instant toInstant(String iso) {
+        if (StringUtils.isBlank(iso)) return null;
+        try {
+            return OffsetDateTime.parse(iso).toInstant();
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     static BigDecimal toNumber(String raw) {

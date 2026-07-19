@@ -44,6 +44,7 @@ import org.telegram.telegrambots.meta.generics.TelegramClient;
 
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -111,6 +112,8 @@ public class OlxTelegramBot implements LongPollingSingleThreadUpdateConsumer {
     // the "code word" gating the score feature; deployments should override the default
     @Value("${ai.score.prefix:score}")
     private String scorePrefix;
+    @Value("${channel.max-listing-age-hours:48}")
+    private long maxListingAgeHours;
 
     private static String extractUrl(String text) {
         if (text == null) return null;
@@ -610,7 +613,7 @@ public class OlxTelegramBot implements LongPollingSingleThreadUpdateConsumer {
             String hash = getHash(offer);
             if (!knownHashes.contains(hash)) {
                 toSave.add(new ListenerOfferHash(listener.getId(), hash, Instant.now()));
-                if (!firstRun) {
+                if (!firstRun && isFreshListing(offer, Duration.ofHours(maxListingAgeHours))) {
                     toNotify.add(offer);
                 }
             }
@@ -672,5 +675,11 @@ public class OlxTelegramBot implements LongPollingSingleThreadUpdateConsumer {
 
     private String getHash(Offer it) {
         return DigestUtils.md5Hex(it.getUrl());
+    }
+
+    static boolean isFreshListing(Offer offer, Duration maxListingAge) {
+        Instant createdAt = offer.getCreatedAt();
+        return createdAt == null
+                || Duration.between(createdAt, Instant.now()).compareTo(maxListingAge) <= 0;
     }
 }

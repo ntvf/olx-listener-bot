@@ -60,4 +60,11 @@
         </createIndex>
     </changeSet>
 
+    <changeSet id="7" author="tymur">
+        <comment>Listing's real creation time — hold back old listings merely bumped to the top of the feed</comment>
+        <addColumn tableName="feed_offers">
+            <column name="listing_created_at" type="timestamp"/>
+        </addColumn>
+    </changeSet>
+
 </databaseChangeLog>

@@ -28,8 +28,10 @@ public class ChannelConfig {
     public ChannelFeedPoller channelFeedPoller(ChannelFeedRepository feedRepository,
                                                FeedOfferRepository offerRepository,
                                                OlxGrabber grabber,
-                                               ListingEnricher enricher) {
-        return new ChannelFeedPoller(feedRepository, offerRepository, grabber, enricher);
+                                               ListingEnricher enricher,
+                                               @Value("${channel.max-listing-age-hours:48}") long maxListingAgeHours) {
+        return new ChannelFeedPoller(feedRepository, offerRepository, grabber, enricher,
+                Duration.ofHours(maxListingAgeHours));
     }
 
     @Bean
