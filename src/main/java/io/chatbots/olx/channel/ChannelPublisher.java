@@ -182,23 +182,24 @@ public class ChannelPublisher {
 
     String buildText(ChannelFeed feed, FeedOffer offer, Channel channel) {
         StringBuilder sb = new StringBuilder();
-        sb.append("🏠 ").append(StringUtils.defaultString(offer.getTitle())).append('\n');
+        sb.append("🏠 ").append(cleanTitle(offer.getTitle())).append('\n');
 
         if (offer.getPrice() != null) {
-            sb.append("💰 ").append(formatAmount(offer.getPrice())).append(' ').append(displayCurrency(offer));
+            // the true monthly total leads (it is also what the score compares); breakdown in parens
+            sb.append("💰 ").append(formatAmount(totalPrice(offer))).append(' ').append(displayCurrency(offer));
             if (offer.getExtraRent() != null && offer.getExtraRent().signum() > 0) {
-                sb.append(" + ").append(formatAmount(offer.getExtraRent())).append(' ')
-                        .append(displayCurrency(offer)).append(" czynsz");
+                sb.append(" (").append(formatAmount(offer.getPrice()))
+                        .append(" + ").append(formatAmount(offer.getExtraRent())).append(" czynsz)");
             }
             scoreLine(feed, offer).ifPresent(line -> sb.append('\n').append(line));
             sb.append('\n');
         }
         if (offer.getAreaM2() != null) {
             sb.append("📐 ").append(offer.getAreaM2().stripTrailingZeros().toPlainString()).append(" m²");
-            if (offer.getRooms() != null) sb.append(" · ").append(offer.getRooms()).append(" pok.");
+            if (offer.getRooms() != null) sb.append(" · 🚪 ").append(offer.getRooms());
+            if (offer.getLocation() != null) sb.append(" · 📍 ").append(offer.getLocation());
             sb.append('\n');
-        }
-        if (offer.getLocation() != null) {
+        } else if (offer.getLocation() != null) {
             sb.append("📍 ").append(offer.getLocation()).append('\n');
         }
         String tags = buildTags(feed, offer);
@@ -280,10 +281,10 @@ public class ChannelPublisher {
 
     /**
      * A price-context line built from same-feed comparables, narrowed as tightly as the sample
-     * allows: same district and room count first (the segment that also yields a meaningful median
-     * monthly total), then same district, then the whole feed. The first level with enough listings
-     * wins; only the tight level renders the median total, since mixing room counts would make an
-     * absolute-price median meaningless.
+     * allows: same district and room count first, then same district, then the whole feed. The
+     * first level with enough listings wins. The tight level compares monthly totals (a meaningful
+     * median within one room-count segment); coarser levels mix room counts, so they compare
+     * per-m² instead.
      */
     private Optional<String> scoreLine(ChannelFeed feed, FeedOffer offer) {
         if (offer.getAreaM2() == null || offer.getAreaM2().signum() <= 0) return Optional.empty();
@@ -302,11 +303,11 @@ public class ChannelPublisher {
             Optional<RentalScorer.Score> s = RentalScorer.score(total, offer.getAreaM2(),
                     comps(pool, offer, o -> Objects.equals(o.getLocation(), offer.getLocation())),
                     RentalScorer.MIN_SAMPLE);
-            if (s.isPresent()) return Optional.of(renderPerM2(offer, s.get(), offer.getLocation()));
+            if (s.isPresent()) return Optional.of(renderPerM2(offer, s.get()));
         }
         return RentalScorer.score(total, offer.getAreaM2(), comps(pool, offer, o -> true),
                         RentalScorer.MIN_SAMPLE)
-                .map(s -> renderPerM2(offer, s, cityLabel(feed)));
+                .map(s -> renderPerM2(offer, s));
     }
 
     /** Comparables in {@code pool} matching {@code filter}, excluding the offer itself. */
@@ -322,21 +323,39 @@ public class ChannelPublisher {
         return out;
     }
 
-    /** Tight district+rooms hit: per-m² comparison plus the segment's median monthly total. */
+    /**
+     * Tight district+rooms hit: two comparisons, each with its own verdict. Totals first — people
+     * shop by room count, so "what does a 2-pok here cost" leads — then per-m², which stays fair
+     * to flats larger or smaller than the segment's typical size.
+     */
     private String renderSegment(FeedOffer offer, RentalScorer.Score s) {
+        if (s.medianTotal().signum() <= 0) return renderPerM2(offer, s);
         String cur = displayCurrency(offer);
-        return String.format("📊 %s %s/m² · mediana %s (%s)\n📊 mediana %s %s · %s %s · n=%d",
-                formatAmount(s.pricePerM2()), cur, formatAmount(s.medianPerM2()), signedPct(s.diffPct()),
-                formatAmount(s.medianTotal()), cur, roomsLabel(offer.getRooms()), offer.getLocation(),
-                s.sampleSize());
+        BigDecimal total = totalPrice(offer);
+        int totalPct = pctDiff(total, s.medianTotal());
+        return String.format("📊 %s %s · %s vs %s %s · n=%d\n📊 %s %s · %s vs %s %s/m²",
+                signedPct(totalPct), verdictDot(totalPct),
+                formatAmount(total), formatAmount(s.medianTotal()), cur, s.sampleSize(),
+                signedPct(s.diffPct()), verdictDot(s.diffPct()),
+                formatAmount(s.pricePerM2()), formatAmount(s.medianPerM2()), cur);
     }
 
-    /** Fallback levels (district-only / whole feed): per-m² comparison with the scope labelled. */
-    private String renderPerM2(FeedOffer offer, RentalScorer.Score s, String scope) {
+    /**
+     * Fallback levels mix room counts, so the comparison stays per-m²; the ~ figure translates the
+     * median back into a market estimate for this flat's area, directly comparable to the 💰 total.
+     */
+    private String renderPerM2(FeedOffer offer, RentalScorer.Score s) {
         String cur = displayCurrency(offer);
-        return String.format("📊 %s %s/m² · mediana %s %s/m² · %s (n=%d, %s)",
-                formatAmount(s.pricePerM2()), cur, formatAmount(s.medianPerM2()), cur,
-                scope, s.sampleSize(), signedPct(s.diffPct()));
+        BigDecimal estimate = s.medianPerM2().multiply(offer.getAreaM2());
+        return String.format("📊 %s %s · %s vs %s %s/m² · ~%s %s · n=%d",
+                signedPct(s.diffPct()), verdictDot(s.diffPct()),
+                formatAmount(s.pricePerM2()), formatAmount(s.medianPerM2()), cur,
+                formatAmount(estimate), cur, s.sampleSize());
+    }
+
+    private static int pctDiff(BigDecimal actual, BigDecimal median) {
+        return actual.subtract(median).multiply(BigDecimal.valueOf(100))
+                .divide(median, 0, RoundingMode.HALF_UP).intValue();
     }
 
     private static String signedPct(int pct) {
@@ -344,14 +363,14 @@ public class ChannelPublisher {
         return sign + Math.abs(pct) + "%";
     }
 
-    private static String roomsLabel(Integer rooms) {
-        if (rooms == null) return "";
-        return rooms == 1 ? "kawalerka" : rooms + " pok.";
+    /** Instant verdict, language-free: 🟢 at −10% or better, 🔴 at +10% or worse, 🟡 between. */
+    private static String verdictDot(int pct) {
+        return pct <= -10 ? "🟢" : pct >= 10 ? "🔴" : "🟡";
     }
 
-    private static String cityLabel(ChannelFeed feed) {
-        String city = cityFromUrl(feed.getFeedUrl());
-        return city == null ? "Warszawa" : StringUtils.capitalize(city);
+    /** Scraped titles carry stray whitespace, e.g. "Bemowo , pełne" — tidy before display. */
+    private static String cleanTitle(String title) {
+        return StringUtils.defaultString(title).replaceAll("\\s+,", ",").replaceAll("\\s{2,}", " ").trim();
     }
 
     private static BigDecimal totalPrice(FeedOffer offer) {

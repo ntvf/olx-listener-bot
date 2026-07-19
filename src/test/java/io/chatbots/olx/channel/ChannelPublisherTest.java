@@ -79,7 +79,8 @@ class ChannelPublisherTest {
         assertTrue(text.contains("📢 @bez_posrednika_waw"), text);
         assertTrue(text.contains("🔗 https://www.olx.pl/d/oferta/x-CID3-ID1.html"), text);
         assertTrue(text.contains("#warszawa_kawalerka #mokotow_kawalerka"), text);
-        assertTrue(text.contains("2 800 zł + 400 zł czynsz"), text);
+        assertTrue(text.contains("💰 3 200 zł (2 800 + 400 czynsz)"), text);
+        assertTrue(text.contains("📐 28 m² · 🚪 1 · 📍 Mokotów"), text);
     }
 
     @Test
@@ -133,8 +134,8 @@ class ChannelPublisherTest {
     }
 
     @Test
-    void scoreLineSegmentsByDistrictAndRoomsWithMedianTotal() {
-        // 6 same-district same-rooms comps at 5000/50 = 100/m²; offer at 80/m² = -20%
+    void scoreLineSegmentsByDistrictAndRoomsComparesTotals() {
+        // 6 same-district same-rooms comps at 5000 total; offer totals 4000 = -20% on totals
         List<FeedOffer> pool = IntStream.rangeClosed(100, 105)
                 .mapToObj(i -> comp(i, "Mokotów", 2, 5000, 50)).toList();
         when(offerRepository.findByFeedIdAndFirstSeenAfterAndPriceIsNotNullAndAreaM2IsNotNull(anyLong(), any()))
@@ -142,8 +143,8 @@ class ChannelPublisherTest {
 
         String text = publisher.buildText(feed(), scoredOffer(), null);
 
-        assertTrue(text.contains("📊 80 zł/m² · mediana 100 (−20%)"), text);
-        assertTrue(text.contains("📊 mediana 5 000 zł · 2 pok. Mokotów · n=6"), text);
+        assertTrue(text.contains("📊 −20% 🟢 · 4 000 vs 5 000 zł · n=6"), text);
+        assertTrue(text.contains("📊 −20% 🟢 · 80 vs 100 zł/m²"), text);
     }
 
     @Test
@@ -157,9 +158,9 @@ class ChannelPublisherTest {
 
         String text = publisher.buildText(feed(), scoredOffer(), null);
 
-        // district-level per-m² line, no median-total line (mixed room counts)
-        assertTrue(text.contains("📊 80 zł/m² · mediana 100 zł/m² · Mokotów (n=10, −20%)"), text);
-        assertFalse(text.contains("mediana 5 000 zł"), text);
+        // district-level per-m² line with the flat's market estimate, not the totals comparison
+        assertTrue(text.contains("📊 −20% 🟢 · 80 vs 100 zł/m² · ~5 000 zł · n=10"), text);
+        assertFalse(text.contains("4 000 vs"), text);
     }
 
     @Test
@@ -172,7 +173,7 @@ class ChannelPublisherTest {
 
         String text = publisher.buildText(feed(), scoredOffer(), null);
 
-        assertTrue(text.contains("· Warszawa (n=10, −20%)"), text);
+        assertTrue(text.contains("📊 −20% 🟢 · 80 vs 100 zł/m² · ~5 000 zł · n=10"), text);
     }
 
     @Test
