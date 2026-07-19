@@ -108,9 +108,7 @@ public class PlUpdatedAtDateParser {
 
         String lower = text.toLowerCase();
 
-        // ────────────────────────────────
-        //  Case: full date (with or without "Odświeżono dnia")
-        // ────────────────────────────────
+        // Case: full date (with or without "Odświeżono dnia")
         Matcher dateMatcher = Pattern.compile(
                 "(?:(?:Odświeżono dnia|Para o topo a|de)\\s+)?(\\d{1,2})\\s+(?:de\\s+)?([a-ząęłńóśźżçãõáéíóúàâêô\\u0400-\\u04FF]+)\\s+(?:de\\s+)?(\\d{4})",
                 Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CHARACTER_CLASS
@@ -129,16 +127,7 @@ public class PlUpdatedAtDateParser {
             } catch (Exception ignored) {
             }
         }
-        // ────────────────────────────────
-        //  Case: dzisiaj / Dzisiaj + time  (Polish)
-        //        Сегодня / Сьогодні        (Russian / Ukrainian today)
-        //        Вчера / Вчора             (Russian / Ukrainian yesterday)
-        //        Hoje                      (Portuguese today)
-        //        Ontem                     (Portuguese yesterday)
-        //        azi                       (Romanian today)
-        //        ieri                      (Romanian yesterday)
-        //        днес                      (Bulgarian today)
-        // ────────────────────────────────
+        // Case: today/yesterday words + time, across pl/ru/uk/pt/ro/bg
         boolean isToday = lower.contains("dzisiaj")
                 || lower.contains("сегодня")
                 || lower.contains("сьогодні")

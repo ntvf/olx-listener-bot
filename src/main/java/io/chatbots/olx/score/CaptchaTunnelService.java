@@ -135,10 +135,8 @@ public class CaptchaTunnelService {
         Thread drainer = new Thread(() -> {
             try {
                 while (output.readLine() != null) {
-                    // discard
                 }
             } catch (Exception ignored) {
-                // process closed
             }
         }, "captcha-tunnel-drain");
         drainer.setDaemon(true);
