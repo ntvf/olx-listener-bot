@@ -66,6 +66,8 @@ public class ChannelPublisher {
     private final Duration postDelay;
     /** Minimum spacing between two posts to the same channel, so the feed drips rather than bursts. */
     private final Duration minPostInterval;
+    /** Listings whose real creation time is older than this are stale (bumped-old) and never posted. */
+    private final Duration maxListingAge;
     /**
      * Night window [from, to) in Warsaw local hours during which posts are still sent but with
      * notifications disabled (silent), so overnight listings land without buzzing subscribers.
@@ -82,6 +84,7 @@ public class ChannelPublisher {
     public void publishDue() {
         Instant now = Instant.now();
         Instant cutoff = now.minus(postDelay);
+        Instant minCreated = now.minus(maxListingAge);
         Set<Long> handled = new HashSet<>();
         for (ChannelFeed feed : feedRepository.findByActiveTrue()) {
             long chat = feed.getChannelChatId();
@@ -89,16 +92,16 @@ public class ChannelPublisher {
             try {
                 Instant lastPost = offerRepository.findMaxPostedAtByChannelChatId(chat);
                 if (lastPost != null && lastPost.isAfter(now.minus(minPostInterval))) continue;
-                publishBurst(feed, cutoff);
+                publishBurst(feed, cutoff, minCreated);
             } catch (Exception e) {
                 log.error("Failed to publish feed {} to channel {}", feed.getId(), chat, e);
             }
         }
     }
 
-    private void publishBurst(ChannelFeed feed, Instant cutoff) {
+    private void publishBurst(ChannelFeed feed, Instant cutoff, Instant minCreated) {
         List<FeedOffer> due = offerRepository.findDueOwnerOffers(
-                feed.getId(), AgencyDetector.Verdict.OWNER.name(), cutoff);
+                feed.getId(), AgencyDetector.Verdict.OWNER.name(), cutoff, minCreated);
         boolean alreadyNotified = false;
         for (FeedOffer offer : due) {
             refreshOfferIfRentImplausible(offer);

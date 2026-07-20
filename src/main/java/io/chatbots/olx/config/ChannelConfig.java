@@ -28,10 +28,8 @@ public class ChannelConfig {
     public ChannelFeedPoller channelFeedPoller(ChannelFeedRepository feedRepository,
                                                FeedOfferRepository offerRepository,
                                                OlxGrabber grabber,
-                                               ListingEnricher enricher,
-                                               @Value("${channel.max-listing-age-hours:48}") long maxListingAgeHours) {
-        return new ChannelFeedPoller(feedRepository, offerRepository, grabber, enricher,
-                Duration.ofHours(maxListingAgeHours));
+                                               ListingEnricher enricher) {
+        return new ChannelFeedPoller(feedRepository, offerRepository, grabber, enricher);
     }
 
     @Bean
@@ -42,11 +40,12 @@ public class ChannelConfig {
                                              ListingEnricher enricher,
                                              @Value("${channel.post-delay-minutes:60}") long postDelayMinutes,
                                              @Value("${channel.min-post-interval-minutes:60}") long minPostIntervalMinutes,
+                                             @Value("${channel.max-listing-age-hours:48}") long maxListingAgeHours,
                                              @Value("${channel.silent-from-hour:22}") int silentFromHour,
                                              @Value("${channel.silent-to-hour:8}") int silentToHour) {
         return new ChannelPublisher(feedRepository, offerRepository, channelRepository, telegramClient,
                 enricher, Duration.ofMinutes(postDelayMinutes), Duration.ofMinutes(minPostIntervalMinutes),
-                silentFromHour, silentToHour);
+                Duration.ofHours(maxListingAgeHours), silentFromHour, silentToHour);
     }
 
     @Bean

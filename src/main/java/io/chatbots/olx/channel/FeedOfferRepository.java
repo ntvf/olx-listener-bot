@@ -17,10 +17,12 @@ public interface FeedOfferRepository extends JpaRepository<FeedOffer, Long> {
     @Query("SELECT o FROM FeedOffer o WHERE o.feedId = :feedId AND o.postedAt IS NULL "
             + "AND o.verdict = :verdict AND o.direct = true "
             + "AND COALESCE(o.listingCreatedAt, o.publishedAt) <= :cutoff "
+            + "AND (o.listingCreatedAt IS NULL OR o.listingCreatedAt >= :minCreated) "
             + "ORDER BY COALESCE(o.listingCreatedAt, o.publishedAt) ASC")
     List<FeedOffer> findDueOwnerOffers(@Param("feedId") long feedId,
                                        @Param("verdict") String verdict,
-                                       @Param("cutoff") Instant cutoff);
+                                       @Param("cutoff") Instant cutoff,
+                                       @Param("minCreated") Instant minCreated);
 
     @Query("SELECT MAX(o.postedAt) FROM FeedOffer o, ChannelFeed f "
             + "WHERE o.feedId = f.id AND f.channelChatId = :chatId")

@@ -30,10 +30,12 @@ class ChannelFeedPollerTest {
     private final Instant firstSeen = Instant.parse("2026-07-18T18:00:00Z");
 
     @Test
-    void bumpedOldListingIsStoredButNotPosted() {
-        // created 10 days ago but only now surfaced (bumped to the top) -> suppressed via posted_at
+    void bumpedOldListingIsStoredUnposted() {
+        // created 10 days ago but only now surfaced (bumped to the top): stored with its real
+        // creation time and left unposted. Staleness is filtered later, in the publish query's age
+        // floor, not stamped into posted_at here (that would pollute the publish rate limiter).
         FeedOffer saved = poll(Instant.now().minus(Duration.ofDays(10)));
-        assertNotNull(saved.getPostedAt());
+        assertNull(saved.getPostedAt());
         assertNotNull(saved.getListingCreatedAt());
     }
 
@@ -58,7 +60,7 @@ class ChannelFeedPollerTest {
         OlxGrabber grabber = mock(OlxGrabber.class);
         ListingEnricher enricher = mock(ListingEnricher.class);
         ChannelFeedPoller poller = new ChannelFeedPoller(
-                feedRepository, offerRepository, grabber, enricher, Duration.ofHours(48));
+                feedRepository, offerRepository, grabber, enricher);
 
         ChannelFeed feed = ChannelFeed.builder().id(1L).feedUrl("https://www.olx.pl/feed").build();
         // non-empty hash set -> not a baseline run, so posted_at reflects the freshness gate alone
