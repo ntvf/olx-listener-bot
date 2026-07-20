@@ -25,8 +25,10 @@ public final class AgencyDetector {
      * diacritics — {@link #fold} normalizes them at load, and the stems absorb declension.
      */
     private static final List<String> OWNER_STEMS = fold(List.of(
-            "bez prowizj", "bez posrednik", "bez posrednictw", "bez agencj",
+            "bez prowizj", "bez posrednik", "bez posrednictw", "bez agencj", "bez udzialu agencj",
             "nie jestem agencj", "nie jestem posrednik", "nie pobieram prowizj",
+            "nie wspolpracuje z agencj", "nie wspolpracujemy z agencj",
+            "nie korzystam z agencj", "nie korzystam z posrednik",
             "nie jestem firma", "od wlascicie", "wlascicie prywatn", "mieszkanie prywatn",
             "oferta prywatn", "osoba prywatn", "prywatnie", "bezposrednio od wlascicie",
             "wynajme bezposrednio", "bezposrednio",
@@ -67,9 +69,9 @@ public final class AgencyDetector {
     ));
 
     /**
-     * Weaker agency signals. One hit yields {@link Verdict#LIKELY_AGENCY}; two or more distinct
-     * hits escalate to {@link Verdict#AGENCY}, since several soft tells together are as telling
-     * as one hard one.
+     * Weaker agency signals. One hit yields {@link Verdict#LIKELY_AGENCY} (unless an explicit owner
+     * phrase is also present, which outweighs a lone soft tell); two or more distinct hits escalate
+     * to {@link Verdict#AGENCY}, since several soft tells together are as telling as one hard one.
      */
     private static final List<String> WEAK_AGENCY_STEMS = fold(List.of(
             "prowizj", "agencj", "posrednik", "posrednictw", "wynagrodzenie posrednik",
@@ -162,7 +164,10 @@ public final class AgencyDetector {
             if (text.contains(stem)) weakHits++;
         }
         if (weakHits >= 2) return Verdict.AGENCY;
-        if (weakHits == 1) return Verdict.LIKELY_AGENCY;
+        // A lone soft tell alongside an explicit owner phrase reads as owner, not agency: an owner
+        // writing "prowizja 0%", or naming agencies only to disavow them, should not be held back
+        // by the same stem. The owner signal wins; two independent soft tells (above) still don't.
+        if (weakHits == 1 && !ownerSignal) return Verdict.LIKELY_AGENCY;
 
         // No agency tell found. For a no-commission channel we favour precision over recall:
         // publish only listings that positively read as owner-posted — an explicit owner phrase,

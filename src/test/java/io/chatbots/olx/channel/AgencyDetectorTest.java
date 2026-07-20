@@ -144,6 +144,24 @@ class AgencyDetectorTest {
                 AgencyDetector.classify("2 pokoje Wola", "Nasza agencja pobiera prowizję", false, SellerActivity.NONE));
     }
 
+    @Test
+    void explicitOwnerPhraseOutweighsSingleWeakTell() {
+        // owner writing "prowizja 0%" (not "bez prowizji") trips one weak stem, but "bezpośrednio"
+        // is an explicit owner phrase — the owner signal wins over a lone soft tell
+        assertEquals(Verdict.OWNER,
+                AgencyDetector.classify("Bezpośrednio, 2 pokoje Włochy", "Prowizja 0%, czynsz w cenie", false, SellerActivity.NONE));
+    }
+
+    @Test
+    void ownerDisavowingAgenciesStaysOwner() {
+        // the exact real-world miss: an owner-direct listing whose only "agency" word is the owner
+        // saying they do not work with agencies — the negation is stripped, not counted as a tell
+        assertEquals(Verdict.OWNER,
+                AgencyDetector.classify("bezpośrednio, czynsz w cenie, 2 osobne pokoje",
+                        "Nowe mieszkanie od 1 września. Nie współpracuję z agencjami nieruchomości.",
+                        false, SellerActivity.NONE));
+    }
+
     // --- publish policy: precision over recall -------------------------------------
 
     @Test
