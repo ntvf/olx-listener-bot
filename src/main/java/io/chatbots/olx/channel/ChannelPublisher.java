@@ -9,9 +9,6 @@ import org.apache.commons.lang3.StringUtils;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
 import org.telegram.telegrambots.meta.api.methods.send.SendPhoto;
 import org.telegram.telegrambots.meta.api.objects.InputFile;
-import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
-import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton;
-import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardRow;
 import org.telegram.telegrambots.meta.exceptions.TelegramApiRequestException;
 import org.telegram.telegrambots.meta.generics.TelegramClient;
 
@@ -54,9 +51,6 @@ public class ChannelPublisher {
     /** OLX category URLs carry the search city as the path segment after wynajem/sprzedaz. */
     private static final Pattern CITY_IN_URL =
             Pattern.compile("/(?:wynajem|sprzedaz|wynajem-dlugoterminowy)/([\\p{L}][\\p{L}-]+)/");
-
-    /** Label of the inline URL button that deep-links back to the channel. */
-    private static final String SUBSCRIBE_BUTTON = "📢 Більше квартир →";
 
     private final ChannelFeedRepository feedRepository;
     private final FeedOfferRepository offerRepository;
@@ -121,14 +115,12 @@ public class ChannelPublisher {
     private void send(ChannelFeed feed, FeedOffer offer, boolean silent) throws Exception {
         Channel channel = channelRepository.findById(feed.getChannelChatId()).orElse(null);
         String text = buildText(feed, offer, channel);
-        InlineKeyboardMarkup markup = subscribeButton(channel);
-        if (offer.getImageUrl() != null && trySendPhoto(feed, offer, text, markup, silent)) {
+        if (offer.getImageUrl() != null && trySendPhoto(feed, offer, text, silent)) {
             return;
         }
         telegramClient.execute(SendMessage.builder()
                 .chatId(feed.getChannelChatId())
                 .text(text)
-                .replyMarkup(markup)
                 .disableNotification(silent)
                 .build());
     }
@@ -151,14 +143,12 @@ public class ChannelPublisher {
      * so retrying the photo would stall every owner offer queued behind it. Transient failures
      * (network, 5xx, rate limits) propagate so the offer simply retries on the next tick.
      */
-    private boolean trySendPhoto(ChannelFeed feed, FeedOffer offer, String text, InlineKeyboardMarkup markup,
-                                 boolean silent) throws Exception {
+    private boolean trySendPhoto(ChannelFeed feed, FeedOffer offer, String text, boolean silent) throws Exception {
         try {
             telegramClient.execute(SendPhoto.builder()
                     .chatId(feed.getChannelChatId())
                     .photo(new InputFile(offer.getImageUrl()))
                     .caption(StringUtils.abbreviate(text, 1024))
-                    .replyMarkup(markup)
                     .disableNotification(silent)
                     .build());
             return true;
@@ -169,17 +159,6 @@ public class ChannelPublisher {
             }
             throw e;
         }
-    }
-
-    /** URL button back to the channel; survives forwarding (unlike callback buttons). */
-    private InlineKeyboardMarkup subscribeButton(Channel channel) {
-        if (channel == null || StringUtils.isBlank(channel.getUsername())) return null;
-        InlineKeyboardRow row = new InlineKeyboardRow();
-        row.add(InlineKeyboardButton.builder()
-                .text(SUBSCRIBE_BUTTON)
-                .url("https://t.me/" + channel.getUsername())
-                .build());
-        return InlineKeyboardMarkup.builder().keyboard(List.of(row)).build();
     }
 
     String buildText(ChannelFeed feed, FeedOffer offer, Channel channel) {

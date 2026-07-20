@@ -104,6 +104,8 @@ public class OlxTelegramBot implements LongPollingSingleThreadUpdateConsumer {
     private ScoreService scoreService;
     @Autowired
     private ChannelAdminService channelAdminService;
+    @Autowired
+    private io.chatbots.olx.furniture.FurnitureAdminService furnitureAdminService;
     // Telegram user id allowed to manage channel feeds; 0 disables the commands entirely
     @Value("${channel.admin-user-id:0}")
     private long channelAdminUserId;
@@ -297,7 +299,10 @@ public class OlxTelegramBot implements LongPollingSingleThreadUpdateConsumer {
                 || update.getMessage().getFrom().getId() != channelAdminUserId) {
             return HandleResult.EMPTY;
         }
-        String reply = channelAdminService.handleCommand(getText(update));
+        String text = getText(update);
+        String reply = channelAdminService.handleCommand(text);
+        // same admin gate serves the isolated IKEA feed commands (/ikea, /ikea-link, /ikea-unlink)
+        if (reply == null) reply = furnitureAdminService.handleCommand(text);
         if (reply == null) return HandleResult.EMPTY;
         return HandleResult.builder().botApiMethod(
                 SendMessage.builder()

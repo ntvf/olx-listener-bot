@@ -67,4 +67,9 @@
         </addColumn>
     </changeSet>
 
+    <changeSet id="8" author="tymur">
+        <comment>Used-IKEA deal channel: isolated furniture_feeds / furniture_offers tables</comment>
+        <sqlFile path="furniture-schema.sql" relativeToChangelogFile="true"/>
+    </changeSet>
+
 </databaseChangeLog>
