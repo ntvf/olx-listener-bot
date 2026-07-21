@@ -150,8 +150,9 @@ public class FurniturePublisher {
 
         StringBuilder sb = new StringBuilder();
         sb.append("🛋 ").append(cleanTitle(offer.getTitle())).append('\n');
-        // the discount is the shareable hook, so it leads: "🔥 −73% · 120 zł (med 450 zł)"
-        sb.append("🔥 ").append(signedPct(score.diffPct()))
+        // the discount is the shareable hook, so it leads; the fire count scales with it:
+        // "🔥🔥🔥 −73% · 120 zł (med 450 zł)"
+        sb.append(fireTier(score.diffPct())).append(' ').append(signedPct(score.diffPct()))
                 .append(" · ").append(formatAmount(offer.getPrice())).append(' ').append(cur)
                 .append(" (med ").append(formatAmount(score.median())).append(' ').append(cur).append(")")
                 .append(" · n=").append(score.sampleSize()).append('\n');
@@ -164,12 +165,10 @@ public class FurniturePublisher {
         return sb.toString();
     }
 
-    /** Hashtags for one-tap filtering: {@code #ikea #malm}. */
+    /** One composite hashtag for one-tap filtering by model: {@code #ikea_malm} (or {@code #ikea}). */
     String buildTags(FurnitureOffer offer) {
-        StringBuilder sb = new StringBuilder("#ikea");
         String model = slug(offer.getModel());
-        if (model != null) sb.append(" #").append(model);
-        return sb.toString();
+        return model == null ? "#ikea" : "#ikea_" + model;
     }
 
     private boolean trySendPhoto(Deal deal, String text, boolean silent) throws Exception {
@@ -207,6 +206,14 @@ public class FurniturePublisher {
     private static String signedPct(int pct) {
         String sign = pct > 0 ? "+" : pct < 0 ? "−" : "±";
         return sign + Math.abs(pct) + "%";
+    }
+
+    /** Fire count scales with the discount depth: 🔥 (≥25% off), 🔥🔥 (≥40%), 🔥🔥🔥 (≥60%). */
+    static String fireTier(int diffPct) {
+        int discount = -diffPct; // deals are below the median, so diffPct is negative
+        if (discount >= 60) return "🔥🔥🔥";
+        if (discount >= 40) return "🔥🔥";
+        return "🔥";
     }
 
     private static String cleanTitle(String title) {

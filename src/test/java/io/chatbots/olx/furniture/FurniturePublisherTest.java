@@ -16,6 +16,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.stream.IntStream;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -83,7 +84,7 @@ class FurniturePublisherTest {
         String text = sent.getValue().getText();
         assertTrue(text.contains("🛋 Szafka nocna MALM Ikea"), text);
         assertTrue(text.contains("🔥 −73% · 120 zł (med 450 zł) · n=5"), text);
-        assertTrue(text.contains("#ikea #malm"), text);
+        assertTrue(text.contains("#ikea_malm"), text);
         assertTrue(text.contains("📢 @ikea_okazje_waw"), text);
         assertTrue(text.contains("🔗 https://www.olx.pl/d/oferta/x-ID10.html"), text);
     }
@@ -183,6 +184,31 @@ class FurniturePublisherTest {
         publisher(25).publishDue();
 
         assertNotNull(due.getPostedAt());
+    }
+
+    @Test
+    void fireCountScalesWithDiscount() {
+        assertEquals("🔥", FurniturePublisher.fireTier(-30));
+        assertEquals("🔥", FurniturePublisher.fireTier(-39));
+        assertEquals("🔥🔥", FurniturePublisher.fireTier(-40));
+        assertEquals("🔥🔥", FurniturePublisher.fireTier(-59));
+        assertEquals("🔥🔥🔥", FurniturePublisher.fireTier(-62));
+    }
+
+    @Test
+    void postTextLeadsWithScaledFire() throws Exception {
+        wireFeed();
+        when(channelRepository.findById(-100L)).thenReturn(Optional.of(
+                Channel.builder().chatId(-100L).username("ikea_waw_deals").build()));
+        when(offerRepository.findDueOffers(eq(1L), any(), any())).thenReturn(List.of(offer(10L, 300)));
+        when(offerRepository.findByFeedIdAndPartFalseAndPriceIsNotNullAndFirstSeenAfter(eq(1L), any()))
+                .thenReturn(comps(800, 6)); // 300 vs 800 = -63% (HALF_UP)
+
+        publisher(25).publishDue();
+
+        ArgumentCaptor<SendMessage> sent = ArgumentCaptor.forClass(SendMessage.class);
+        verify(telegramClient).execute(sent.capture());
+        assertTrue(sent.getValue().getText().contains("🔥🔥🔥 −63%"), sent.getValue().getText());
     }
 
     @Test
