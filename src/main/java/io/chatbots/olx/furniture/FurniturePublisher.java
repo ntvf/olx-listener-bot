@@ -10,9 +10,6 @@ import org.apache.commons.lang3.StringUtils;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
 import org.telegram.telegrambots.meta.api.methods.send.SendPhoto;
 import org.telegram.telegrambots.meta.api.objects.InputFile;
-import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
-import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton;
-import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardRow;
 import org.telegram.telegrambots.meta.exceptions.TelegramApiRequestException;
 import org.telegram.telegrambots.meta.generics.TelegramClient;
 
@@ -43,9 +40,6 @@ public class FurniturePublisher {
 
     /** The night (silent) window is evaluated in the channel's local (Warsaw) time, not server UTC. */
     private static final ZoneId POST_ZONE = ZoneId.of("Europe/Warsaw");
-
-    /** Label of the inline URL button that deep-links back to the channel. */
-    private static final String SUBSCRIBE_BUTTON = "📢 Więcej okazji →";
 
     private final FurnitureFeedRepository feedRepository;
     private final FurnitureOfferRepository offerRepository;
@@ -134,14 +128,12 @@ public class FurniturePublisher {
     private void send(Deal deal, boolean silent) throws Exception {
         Channel channel = channelRepository.findById(channelOf(deal)).orElse(null);
         String text = buildText(deal, channel);
-        InlineKeyboardMarkup markup = subscribeButton(channel);
-        if (deal.offer().getImageUrl() != null && trySendPhoto(deal, text, markup, silent)) {
+        if (deal.offer().getImageUrl() != null && trySendPhoto(deal, text, silent)) {
             return;
         }
         telegramClient.execute(SendMessage.builder()
                 .chatId(channelOf(deal))
                 .text(text)
-                .replyMarkup(markup)
                 .disableNotification(silent)
                 .build());
     }
@@ -180,14 +172,12 @@ public class FurniturePublisher {
         return sb.toString();
     }
 
-    private boolean trySendPhoto(Deal deal, String text, InlineKeyboardMarkup markup, boolean silent)
-            throws Exception {
+    private boolean trySendPhoto(Deal deal, String text, boolean silent) throws Exception {
         try {
             telegramClient.execute(SendPhoto.builder()
                     .chatId(channelOf(deal))
                     .photo(new InputFile(deal.offer().getImageUrl()))
                     .caption(StringUtils.abbreviate(text, 1024))
-                    .replyMarkup(markup)
                     .disableNotification(silent)
                     .build());
             return true;
@@ -199,16 +189,6 @@ public class FurniturePublisher {
             }
             throw e;
         }
-    }
-
-    private InlineKeyboardMarkup subscribeButton(Channel channel) {
-        if (channel == null || StringUtils.isBlank(channel.getUsername())) return null;
-        InlineKeyboardRow row = new InlineKeyboardRow();
-        row.add(InlineKeyboardButton.builder()
-                .text(SUBSCRIBE_BUTTON)
-                .url("https://t.me/" + channel.getUsername())
-                .build());
-        return InlineKeyboardMarkup.builder().keyboard(List.of(row)).build();
     }
 
     private static Instant effectiveTime(FurnitureOffer offer) {
