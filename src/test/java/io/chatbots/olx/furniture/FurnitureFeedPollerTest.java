@@ -47,12 +47,21 @@ class FurnitureFeedPollerTest {
     }
 
     @Test
-    void nonIkeaCollisionIsStoredFlagged() {
-        // a "Billy" bike tyre from the broad q=ikea feed: no ikea token -> not our unit, no model
-        FurnitureOffer saved = poll("Opona Schwalbe Billy Bonkers 26", BigDecimal.valueOf(120),
+    void unknownModelIsStoredFlagged() {
+        // a furniture listing whose model is not in the dictionary -> excluded from the median
+        FurnitureOffer saved = poll("Sofa rozkładana zielona", BigDecimal.valueOf(300),
                 Instant.now().minus(Duration.ofMinutes(5)));
         assertTrue(saved.isPart());
         assertNull(saved.getModel());
+    }
+
+    @Test
+    void realUnitWithoutIkeaWordIsWhole() {
+        // the recall fix: a genuine unit that names only the model is a whole comp, not a part
+        FurnitureOffer saved = poll("Komoda HEMNES biała 6 szuflad", BigDecimal.valueOf(300),
+                Instant.now().minus(Duration.ofMinutes(5)));
+        assertEquals("HEMNES", saved.getModel());
+        assertFalse(saved.isPart());
     }
 
     @Test
