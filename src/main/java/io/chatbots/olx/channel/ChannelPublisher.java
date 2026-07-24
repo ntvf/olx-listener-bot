@@ -69,6 +69,11 @@ public class ChannelPublisher {
      */
     private final int silentFromHour;
     private final int silentToHour;
+    /**
+     * A listing whose content fingerprint (price, area, rooms, location, title) was already posted
+     * within this window is suppressed — the same flat re-listed under fresh throwaway accounts.
+     */
+    private final Duration duplicateWindow;
 
     /**
      * Once per {@link #minPostInterval} per channel, posts every listing that is at least
@@ -99,6 +104,13 @@ public class ChannelPublisher {
         boolean alreadyNotified = false;
         for (FeedOffer offer : due) {
             refreshOfferIfRentImplausible(offer);
+            if (isRecentDuplicate(feed, offer)) {
+                log.info("Suppressed duplicate offer {} ({}) — fingerprint already posted within {}",
+                        offer.getId(), offer.getUrl(), duplicateWindow);
+                offer.setPostedAt(Instant.now());
+                offerRepository.save(offer);
+                continue;
+            }
             boolean silent = alreadyNotified || silentNow(Instant.now());
             try {
                 send(feed, offer, silent);
@@ -110,6 +122,20 @@ public class ChannelPublisher {
             offer.setPostedAt(Instant.now());
             offerRepository.save(offer);
         }
+    }
+
+    /**
+     * A listing is a duplicate only when it can be fully fingerprinted; a null in any key field
+     * would match unrelated listings, so those post normally rather than risk a false suppression.
+     */
+    private boolean isRecentDuplicate(ChannelFeed feed, FeedOffer offer) {
+        if (offer.getPrice() == null || offer.getAreaM2() == null || offer.getRooms() == null
+                || offer.getLocation() == null || offer.getTitle() == null) {
+            return false;
+        }
+        return offerRepository.existsPostedDuplicate(feed.getId(), offer.getId(),
+                Instant.now().minus(duplicateWindow), offer.getPrice(), offer.getAreaM2(),
+                offer.getRooms(), offer.getLocation(), offer.getTitle());
     }
 
     private void send(ChannelFeed feed, FeedOffer offer, boolean silent) throws Exception {

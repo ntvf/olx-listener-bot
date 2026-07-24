@@ -42,10 +42,12 @@ public class ChannelConfig {
                                              @Value("${channel.min-post-interval-minutes:60}") long minPostIntervalMinutes,
                                              @Value("${channel.max-listing-age-hours:48}") long maxListingAgeHours,
                                              @Value("${channel.silent-from-hour:22}") int silentFromHour,
-                                             @Value("${channel.silent-to-hour:8}") int silentToHour) {
+                                             @Value("${channel.silent-to-hour:8}") int silentToHour,
+                                             @Value("${channel.duplicate-window-days:14}") long duplicateWindowDays) {
         return new ChannelPublisher(feedRepository, offerRepository, channelRepository, telegramClient,
                 enricher, Duration.ofMinutes(postDelayMinutes), Duration.ofMinutes(minPostIntervalMinutes),
-                Duration.ofHours(maxListingAgeHours), silentFromHour, silentToHour);
+                Duration.ofHours(maxListingAgeHours), silentFromHour, silentToHour,
+                Duration.ofDays(duplicateWindowDays));
     }
 
     @Bean

@@ -38,7 +38,8 @@ class ChannelPublisherTest {
     private final ListingEnricher enricher = mock(ListingEnricher.class);
     private final ChannelPublisher publisher = new ChannelPublisher(
             feedRepository, offerRepository, mock(ChannelRepository.class),
-            telegramClient, enricher, Duration.ofMinutes(60), Duration.ofMinutes(10), Duration.ofHours(48), 22, 8);
+            telegramClient, enricher, Duration.ofMinutes(60), Duration.ofMinutes(10), Duration.ofHours(48), 22, 8,
+            Duration.ofDays(14));
 
     private static TelegramApiRequestException apiError(int code) {
         TelegramApiRequestException e = mock(TelegramApiRequestException.class);
@@ -212,12 +213,29 @@ class ChannelPublisherTest {
     }
 
     @Test
+    void suppressesDuplicateFingerprintWithoutSending() throws Exception {
+        // same flat re-listed under a fresh account: same specs+title already posted within the window
+        FeedOffer repost = offer().toBuilder().id(10L).build();
+        queueDue(repost);
+        when(offerRepository.existsPostedDuplicate(anyLong(), anyLong(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(true);
+
+        publisher.publishDue();
+
+        verify(telegramClient, never()).execute(any(SendPhoto.class));
+        verify(telegramClient, never()).execute(any(SendMessage.class));
+        // marked posted so it drains from the due queue instead of being retried every tick
+        assertNotNull(repost.getPostedAt());
+    }
+
+    @Test
     void burstPostsAllDueButOnlyFirstNotifies() throws Exception {
         when(offerRepository.findByFeedIdAndFirstSeenAfterAndPriceIsNotNullAndAreaM2IsNotNull(anyLong(), any()))
                 .thenReturn(List.of());
         // night window disabled (from==to) so the first message deterministically notifies
         ChannelPublisher p = new ChannelPublisher(feedRepository, offerRepository, mock(ChannelRepository.class),
-                telegramClient, enricher, Duration.ofMinutes(60), Duration.ofMinutes(60), Duration.ofHours(48), 0, 0);
+                telegramClient, enricher, Duration.ofMinutes(60), Duration.ofMinutes(60), Duration.ofHours(48), 0, 0,
+                Duration.ofDays(14));
         FeedOffer first = offer().toBuilder().id(10L).imageUrl(null).build();
         FeedOffer second = offer().toBuilder().id(11L).imageUrl(null).build();
         FeedOffer third = offer().toBuilder().id(12L).imageUrl(null).build();
@@ -242,7 +260,8 @@ class ChannelPublisherTest {
                 .thenReturn(List.of());
         // night window covers the whole day (from=0,to=24 -> always night) so nothing buzzes
         ChannelPublisher p = new ChannelPublisher(feedRepository, offerRepository, mock(ChannelRepository.class),
-                telegramClient, enricher, Duration.ofMinutes(60), Duration.ofMinutes(60), Duration.ofHours(48), 0, 24);
+                telegramClient, enricher, Duration.ofMinutes(60), Duration.ofMinutes(60), Duration.ofHours(48), 0, 24,
+                Duration.ofDays(14));
         FeedOffer first = offer().toBuilder().id(10L).imageUrl(null).build();
         FeedOffer second = offer().toBuilder().id(11L).imageUrl(null).build();
         queueDue(first, second);

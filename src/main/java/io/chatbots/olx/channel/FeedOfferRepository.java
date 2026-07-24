@@ -28,6 +28,24 @@ public interface FeedOfferRepository extends JpaRepository<FeedOffer, Long> {
             + "WHERE o.feedId = f.id AND f.channelChatId = :chatId")
     Instant findMaxPostedAtByChannelChatId(@Param("chatId") long chatId);
 
+    /**
+     * True when a listing with the same content fingerprint (price, area, rooms, location, title)
+     * was already posted to this feed within the window. Catches the same flat re-listed under fresh
+     * throwaway accounts — different ad id, seller and re-uploaded photos, but identical specs+title.
+     */
+    @Query("SELECT COUNT(o) > 0 FROM FeedOffer o WHERE o.feedId = :feedId AND o.id <> :excludeId "
+            + "AND o.postedAt IS NOT NULL AND o.postedAt >= :since "
+            + "AND o.price = :price AND o.areaM2 = :area AND o.rooms = :rooms "
+            + "AND o.location = :location AND LOWER(TRIM(o.title)) = LOWER(TRIM(:title))")
+    boolean existsPostedDuplicate(@Param("feedId") long feedId,
+                                  @Param("excludeId") long excludeId,
+                                  @Param("since") Instant since,
+                                  @Param("price") java.math.BigDecimal price,
+                                  @Param("area") java.math.BigDecimal area,
+                                  @Param("rooms") Integer rooms,
+                                  @Param("location") String location,
+                                  @Param("title") String title);
+
     List<FeedOffer> findByFeedIdAndFirstSeenAfterAndPriceIsNotNullAndAreaM2IsNotNull(
             long feedId, Instant since);
 
