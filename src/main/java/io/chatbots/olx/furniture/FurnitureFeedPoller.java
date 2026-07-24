@@ -4,6 +4,7 @@ import io.chatbots.olx.channel.ListingEnricher;
 import io.chatbots.olx.furniture.entity.FurnitureFeed;
 import io.chatbots.olx.furniture.entity.FurnitureOffer;
 import io.chatbots.olx.grabber.Offer;
+import io.chatbots.olx.grabber.OfferKey;
 import io.chatbots.olx.grabber.OlxGrabber;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -54,7 +55,7 @@ public class FurnitureFeedPoller {
 
         int stored = 0;
         for (Offer offer : offers) {
-            String hash = DigestUtils.md5Hex(offer.getUrl());
+            String hash = DigestUtils.md5Hex(OfferKey.of(offer.getUrl()));
             if (known.contains(hash)) continue;
 
             ListingEnricher.Enriched details = enricher.enrich(offer.getUrl());

@@ -72,4 +72,53 @@
         <sqlFile path="furniture-schema.sql" relativeToChangelogFile="true"/>
     </changeSet>
 
+    <changeSet id="9" author="tymur">
+        <comment>
+            Dedup on the immutable OLX/Otodom ad id, not the full URL. A seller editing the title
+            changes the slug (…-CID3-ID1bA1FD.html) while the -ID token stays, which under the old
+            md5(url) key looked brand-new and re-posted the listing. Collapse existing rows onto the
+            new key so redeploy does not re-flood the channel: drop duplicates (keep earliest), then
+            rewrite offer_hash. Rows with no -ID segment keep their full-URL hash unchanged.
+        </comment>
+        <sql>
+            DELETE FROM feed_offers f
+            USING (
+                SELECT id, row_number() OVER (
+                           PARTITION BY feed_id, md5(coalesce(substring(url from '-ID([0-9A-Za-z]+)'), url))
+                           ORDER BY id
+                       ) AS rn
+                FROM feed_offers
+            ) dup
+            WHERE f.id = dup.id AND dup.rn > 1
+        </sql>
+        <sql>
+            UPDATE feed_offers
+            SET offer_hash = md5(coalesce(substring(url from '-ID([0-9A-Za-z]+)'), url))
+            WHERE offer_hash &lt;&gt; md5(coalesce(substring(url from '-ID([0-9A-Za-z]+)'), url))
+        </sql>
+    </changeSet>
+
+    <changeSet id="10" author="tymur">
+        <comment>
+            Same ad-id dedup for the IKEA furniture channel (furniture_offers). Collapse duplicates
+            onto the new key so redeploy does not re-post edited-slug listings.
+        </comment>
+        <sql>
+            DELETE FROM furniture_offers f
+            USING (
+                SELECT id, row_number() OVER (
+                           PARTITION BY feed_id, md5(coalesce(substring(url from '-ID([0-9A-Za-z]+)'), url))
+                           ORDER BY id
+                       ) AS rn
+                FROM furniture_offers
+            ) dup
+            WHERE f.id = dup.id AND dup.rn > 1
+        </sql>
+        <sql>
+            UPDATE furniture_offers
+            SET offer_hash = md5(coalesce(substring(url from '-ID([0-9A-Za-z]+)'), url))
+            WHERE offer_hash &lt;&gt; md5(coalesce(substring(url from '-ID([0-9A-Za-z]+)'), url))
+        </sql>
+    </changeSet>
+
 </databaseChangeLog>

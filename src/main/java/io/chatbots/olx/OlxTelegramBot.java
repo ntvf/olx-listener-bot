@@ -3,6 +3,7 @@ package io.chatbots.olx;
 import io.chatbots.olx.channel.ChannelAdminService;
 import io.chatbots.olx.checker.RegressionChecker;
 import io.chatbots.olx.grabber.Offer;
+import io.chatbots.olx.grabber.OfferKey;
 import io.chatbots.olx.grabber.OlxGrabber;
 import io.chatbots.olx.i18n.TranslationService;
 import io.chatbots.olx.score.ScoreService;
@@ -679,7 +680,7 @@ public class OlxTelegramBot implements LongPollingSingleThreadUpdateConsumer {
     }
 
     private String getHash(Offer it) {
-        return DigestUtils.md5Hex(it.getUrl());
+        return DigestUtils.md5Hex(OfferKey.of(it.getUrl()));
     }
 
     static boolean isFreshListing(Offer offer, Duration maxListingAge) {
