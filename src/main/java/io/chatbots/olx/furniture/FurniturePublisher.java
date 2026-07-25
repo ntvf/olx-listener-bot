@@ -2,6 +2,7 @@ package io.chatbots.olx.furniture;
 
 import io.chatbots.olx.channel.ChannelRepository;
 import io.chatbots.olx.channel.entity.Channel;
+import io.chatbots.olx.furniture.entity.FurnitureCatalogPrice;
 import io.chatbots.olx.furniture.entity.FurnitureFeed;
 import io.chatbots.olx.furniture.entity.FurnitureOffer;
 import lombok.RequiredArgsConstructor;
@@ -44,6 +45,7 @@ public class FurniturePublisher {
     private final FurnitureFeedRepository feedRepository;
     private final FurnitureOfferRepository offerRepository;
     private final ChannelRepository channelRepository;
+    private final FurnitureCatalogPriceRepository catalogRepository;
     private final TelegramClient telegramClient;
     private final Duration postDelay;
     /** Minimum spacing between two bursts to the same channel. */
@@ -167,6 +169,8 @@ public class FurniturePublisher {
                 .append(" · ").append(formatAmount(offer.getPrice())).append(' ').append(cur)
                 .append(" (med ").append(formatAmount(score.median())).append(' ').append(cur).append(")")
                 .append(" · n=").append(score.sampleSize()).append('\n');
+        String catalogLine = catalogLine(offer, cur);
+        if (catalogLine != null) sb.append(catalogLine).append('\n');
         String tags = buildTags(offer);
         if (!tags.isEmpty()) sb.append(tags).append('\n');
         if (channel != null && StringUtils.isNotBlank(channel.getUsername())) {
@@ -174,6 +178,33 @@ public class FurniturePublisher {
         }
         sb.append("🔗 ").append(offer.getUrl());
         return sb.toString();
+    }
+
+    /**
+     * The optional "vs new" anchor line, e.g. {@code 🏷 −66% vs new (kat. 279 zł)}. Prefers the exact
+     * {@code model+variant} catalog price; falls back to the model-level minimum ("kat. od …"). Shown
+     * only when the used ask is actually below the new price — a used unit priced at/above new is odd
+     * (a bundle, a scam, a mis-key) and a "+% vs new" would read as broken, so the line is dropped.
+     * Absent entirely when nothing was scraped for the model, so partial catalog coverage never breaks
+     * a post.
+     */
+    String catalogLine(FurnitureOffer offer, String currency) {
+        if (offer.getModel() == null) return null;
+        FurnitureCatalogPrice exact = offer.getVariant() == null ? null
+                : catalogRepository.findByModelAndVariant(offer.getModel(), offer.getVariant()).orElse(null);
+        boolean fromModelLevel = exact == null;
+        FurnitureCatalogPrice catalog = fromModelLevel
+                ? catalogRepository.findModelLevel(offer.getModel()).orElse(null)
+                : exact;
+        if (catalog == null || catalog.getPrice().signum() <= 0) return null;
+        if (offer.getPrice().compareTo(catalog.getPrice()) >= 0) return null;
+
+        int diffPct = offer.getPrice().subtract(catalog.getPrice())
+                .multiply(BigDecimal.valueOf(100))
+                .divide(catalog.getPrice(), 0, RoundingMode.HALF_UP)
+                .intValue();
+        String prefix = fromModelLevel ? "kat. od " : "kat. ";
+        return "🏷 " + signedPct(diffPct) + " vs new (" + prefix + formatAmount(catalog.getPrice()) + ' ' + currency + ")";
     }
 
     /** One composite hashtag for one-tap filtering by model: {@code #ikea_malm} (or {@code #ikea}). */

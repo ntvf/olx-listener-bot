@@ -35,12 +35,13 @@ class FurniturePublisherTest {
     private final FurnitureFeedRepository feedRepository = mock(FurnitureFeedRepository.class);
     private final FurnitureOfferRepository offerRepository = mock(FurnitureOfferRepository.class);
     private final ChannelRepository channelRepository = mock(ChannelRepository.class);
+    private final FurnitureCatalogPriceRepository catalogRepository = mock(FurnitureCatalogPriceRepository.class);
     private final TelegramClient telegramClient = mock(TelegramClient.class);
 
     /** Publisher with the night window disabled (from==to) so the first burst message deterministically notifies. */
     private FurniturePublisher publisher(int minDiscountPct) {
-        return new FurniturePublisher(feedRepository, offerRepository, channelRepository, telegramClient,
-                Duration.ofMinutes(60), Duration.ofMinutes(60), Duration.ofHours(48),
+        return new FurniturePublisher(feedRepository, offerRepository, channelRepository, catalogRepository,
+                telegramClient, Duration.ofMinutes(60), Duration.ofMinutes(60), Duration.ofHours(48),
                 Duration.ofDays(35), minDiscountPct, 0, 0);
     }
 
@@ -209,8 +210,8 @@ class FurniturePublisherTest {
         wireFeed();
         // night window covers the whole day (0->24) so nothing buzzes
         FurniturePublisher p = new FurniturePublisher(feedRepository, offerRepository, channelRepository,
-                telegramClient, Duration.ofMinutes(60), Duration.ofMinutes(60), Duration.ofHours(48),
-                Duration.ofDays(35), 25, 0, 24);
+                catalogRepository, telegramClient, Duration.ofMinutes(60), Duration.ofMinutes(60),
+                Duration.ofHours(48), Duration.ofDays(35), 25, 0, 24);
         when(offerRepository.findDueOffers(eq(1L), any(), any()))
                 .thenReturn(List.of(offer(10L, 120), offer(11L, 130)));
         when(offerRepository.findSizedComparables(eq(1L), any()))
@@ -260,6 +261,58 @@ class FurniturePublisherTest {
         ArgumentCaptor<SendMessage> sent = ArgumentCaptor.forClass(SendMessage.class);
         verify(telegramClient).execute(sent.capture());
         assertTrue(sent.getValue().getText().contains("🔥🔥🔥 −63%"), sent.getValue().getText());
+    }
+
+    @Test
+    void addsVsNewLineFromExactVariantCatalogPrice() throws Exception {
+        wireFeed();
+        when(offerRepository.findDueOffers(eq(1L), any(), any())).thenReturn(List.of(offerV(10L, 120, "W80")));
+        when(offerRepository.findSizedComparables(eq(1L), any())).thenReturn(compsV("W80", 450, 5, 1000));
+        when(catalogRepository.findByModelAndVariant("MALM", "W80")).thenReturn(Optional.of(
+                io.chatbots.olx.furniture.entity.FurnitureCatalogPrice.builder()
+                        .model("MALM").variant("W80").price(BigDecimal.valueOf(349)).currency("PLN").build()));
+
+        publisher(25).publishDue();
+
+        ArgumentCaptor<SendMessage> sent = ArgumentCaptor.forClass(SendMessage.class);
+        verify(telegramClient).execute(sent.capture());
+        // 120 vs 349 catalog = -66% (HALF_UP); exact variant match uses "kat." (no "od")
+        assertTrue(sent.getValue().getText().contains("🏷 −66% vs new (kat. 349 zł)"), sent.getValue().getText());
+    }
+
+    @Test
+    void fallsBackToModelLevelCatalogWithFromLabel() throws Exception {
+        wireFeed();
+        when(offerRepository.findDueOffers(eq(1L), any(), any())).thenReturn(List.of(offerV(10L, 120, "W80")));
+        when(offerRepository.findSizedComparables(eq(1L), any())).thenReturn(compsV("W80", 450, 5, 1000));
+        when(catalogRepository.findByModelAndVariant("MALM", "W80")).thenReturn(Optional.empty());
+        when(catalogRepository.findModelLevel("MALM")).thenReturn(Optional.of(
+                io.chatbots.olx.furniture.entity.FurnitureCatalogPrice.builder()
+                        .model("MALM").variant(null).price(BigDecimal.valueOf(300)).currency("PLN").build()));
+
+        publisher(25).publishDue();
+
+        ArgumentCaptor<SendMessage> sent = ArgumentCaptor.forClass(SendMessage.class);
+        verify(telegramClient).execute(sent.capture());
+        // 120 vs 300 = -60%; model-level fallback reads "kat. od"
+        assertTrue(sent.getValue().getText().contains("🏷 −60% vs new (kat. od 300 zł)"), sent.getValue().getText());
+    }
+
+    @Test
+    void omitsVsNewLineWhenUsedNotBelowNew() throws Exception {
+        wireFeed();
+        when(offerRepository.findDueOffers(eq(1L), any(), any())).thenReturn(List.of(offerV(10L, 120, "W80")));
+        when(offerRepository.findSizedComparables(eq(1L), any())).thenReturn(compsV("W80", 450, 5, 1000));
+        // catalog says new is cheaper than this used ask — a "+% vs new" would look broken, so drop it
+        when(catalogRepository.findByModelAndVariant("MALM", "W80")).thenReturn(Optional.of(
+                io.chatbots.olx.furniture.entity.FurnitureCatalogPrice.builder()
+                        .model("MALM").variant("W80").price(BigDecimal.valueOf(99)).currency("PLN").build()));
+
+        publisher(25).publishDue();
+
+        ArgumentCaptor<SendMessage> sent = ArgumentCaptor.forClass(SendMessage.class);
+        verify(telegramClient).execute(sent.capture());
+        assertFalse(sent.getValue().getText().contains("vs new"), sent.getValue().getText());
     }
 
     @Test

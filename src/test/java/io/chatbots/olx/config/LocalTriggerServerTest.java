@@ -2,6 +2,7 @@ package io.chatbots.olx.config;
 
 import io.chatbots.olx.channel.ChannelFeedPoller;
 import io.chatbots.olx.channel.ChannelPublisher;
+import io.chatbots.olx.furniture.FurnitureCatalogScraper;
 import io.chatbots.olx.furniture.FurnitureFeedPoller;
 import io.chatbots.olx.furniture.FurniturePhotoEnricher;
 import io.chatbots.olx.furniture.FurniturePublisher;
@@ -26,6 +27,7 @@ class LocalTriggerServerTest {
     private final FurnitureFeedPoller furniturePoller = mock(FurnitureFeedPoller.class);
     private final FurniturePublisher furniturePublisher = mock(FurniturePublisher.class);
     private final FurniturePhotoEnricher photoEnricher = mock(FurniturePhotoEnricher.class);
+    private final FurnitureCatalogScraper catalogScraper = mock(FurnitureCatalogScraper.class);
     private final ChannelFeedPoller channelPoller = mock(ChannelFeedPoller.class);
     private final ChannelPublisher channelPublisher = mock(ChannelPublisher.class);
 
@@ -33,7 +35,7 @@ class LocalTriggerServerTest {
 
     private LocalTriggerServer serverOn(int port) {
         return new LocalTriggerServer(port, furniturePoller, furniturePublisher, photoEnricher,
-                channelPoller, channelPublisher);
+                catalogScraper, channelPoller, channelPublisher);
     }
 
     private static int freePort() throws IOException {
@@ -67,6 +69,19 @@ class LocalTriggerServerTest {
     }
 
     @Test
+    void catalogTriggerFiresTheScraper() throws Exception {
+        int port = freePort();
+        server = serverOn(port);
+        server.start();
+
+        HttpResponse<String> res = hit(port, "ikea-catalog");
+
+        assertEquals(200, res.statusCode());
+        assertTrue(res.body().contains("triggered: ikea-catalog"));
+        verify(catalogScraper).refreshNow();
+    }
+
+    @Test
     void unknownTriggerIs404AndTouchesNothing() throws Exception {
         int port = freePort();
         server = serverOn(port);
@@ -76,7 +91,7 @@ class LocalTriggerServerTest {
 
         assertEquals(404, res.statusCode());
         assertTrue(res.body().contains("unknown trigger"));
-        verifyNoInteractions(furniturePoller, furniturePublisher, photoEnricher, channelPoller, channelPublisher);
+        verifyNoInteractions(furniturePoller, furniturePublisher, photoEnricher, catalogScraper, channelPoller, channelPublisher);
     }
 
     @Test
@@ -85,6 +100,6 @@ class LocalTriggerServerTest {
         server.start(); // must not bind, throw, or wire anything
         server.stop();  // must be safe with no server
 
-        verifyNoInteractions(furniturePoller, furniturePublisher, photoEnricher, channelPoller, channelPublisher);
+        verifyNoInteractions(furniturePoller, furniturePublisher, photoEnricher, catalogScraper, channelPoller, channelPublisher);
     }
 }

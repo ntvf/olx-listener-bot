@@ -23,6 +23,7 @@ public class FurnitureScheduler implements SchedulingConfigurer {
     private final FurnitureFeedPoller poller;
     private final FurniturePublisher publisher;
     private final FurniturePhotoEnricher photoEnricher;
+    private final FurnitureCatalogScraper catalogScraper;
 
     @Value("${furniture.poll-min-seconds:300}")
     private long pollMinSeconds;
@@ -41,6 +42,16 @@ public class FurnitureScheduler implements SchedulingConfigurer {
     @Scheduled(fixedDelayString = "${furniture.photo-ai.interval-ms:600000}")
     public void enrichPhotos() {
         photoEnricher.tick();
+    }
+
+    /**
+     * Checks the IKEA catalog daily and re-scrapes only when it is older than {@code max-age-days}
+     * (≈1.5 months) — see {@link FurnitureCatalogScraper#refreshIfStale()}. Cheap when fresh (one
+     * timestamp query); the heavy crawl runs on the scraper's own thread, so this never blocks.
+     */
+    @Scheduled(fixedDelayString = "${furniture.catalog.check-interval-ms:86400000}")
+    public void refreshCatalog() {
+        catalogScraper.refreshIfStale();
     }
 
     @Override

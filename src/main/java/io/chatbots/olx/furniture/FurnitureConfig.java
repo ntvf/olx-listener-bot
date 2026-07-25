@@ -35,6 +35,7 @@ public class FurnitureConfig {
     public FurniturePublisher furniturePublisher(FurnitureFeedRepository feedRepository,
                                                  FurnitureOfferRepository offerRepository,
                                                  ChannelRepository channelRepository,
+                                                 FurnitureCatalogPriceRepository catalogRepository,
                                                  TelegramClient telegramClient,
                                                  @Value("${furniture.post-delay-minutes:60}") long postDelayMinutes,
                                                  @Value("${furniture.min-post-interval-minutes:60}") long minPostIntervalMinutes,
@@ -43,8 +44,8 @@ public class FurnitureConfig {
                                                  @Value("${furniture.min-discount-pct:25}") int minDiscountPct,
                                                  @Value("${furniture.silent-from-hour:22}") int silentFromHour,
                                                  @Value("${furniture.silent-to-hour:8}") int silentToHour) {
-        return new FurniturePublisher(feedRepository, offerRepository, channelRepository, telegramClient,
-                Duration.ofMinutes(postDelayMinutes), Duration.ofMinutes(minPostIntervalMinutes),
+        return new FurniturePublisher(feedRepository, offerRepository, channelRepository, catalogRepository,
+                telegramClient, Duration.ofMinutes(postDelayMinutes), Duration.ofMinutes(minPostIntervalMinutes),
                 Duration.ofHours(maxListingAgeHours), Duration.ofDays(comparablesWindowDays),
                 minDiscountPct, silentFromHour, silentToHour);
     }
@@ -54,6 +55,14 @@ public class FurnitureConfig {
                                                        FurnitureFeedRepository feedRepository,
                                                        OlxGrabber grabber) {
         return new FurnitureAdminService(channelRepository, feedRepository, grabber);
+    }
+
+    @Bean
+    public FurnitureCatalogScraper furnitureCatalogScraper(FurnitureCatalogPriceRepository catalogRepository,
+                                                           @Value("${furniture.catalog.enabled:true}") boolean enabled,
+                                                           @Value("${furniture.catalog.max-age-days:45}") long maxAgeDays,
+                                                           @Value("${furniture.catalog.fetch-pause-ms:700}") long fetchPauseMs) {
+        return new FurnitureCatalogScraper(catalogRepository, enabled, Duration.ofDays(maxAgeDays), fetchPauseMs);
     }
 
     @Bean

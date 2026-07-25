@@ -150,4 +150,12 @@
         </addColumn>
     </changeSet>
 
+    <changeSet id="13" author="tymur">
+        <comment>
+            Scraped IKEA new-retail (catalog) prices, keyed on the same (model, variant) scheme as
+            listings, to add a "vs new" anchor to deal posts. Refreshed by FurnitureCatalogScraper.
+        </comment>
+        <sqlFile path="furniture-catalog-schema.sql" relativeToChangelogFile="true"/>
+    </changeSet>
+
 </databaseChangeLog>
