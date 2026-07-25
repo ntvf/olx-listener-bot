@@ -87,7 +87,7 @@ class FurniturePublisherTest {
         when(channelRepository.findById(-100L)).thenReturn(Optional.of(
                 Channel.builder().chatId(-100L).username("ikea_okazje_waw").build()));
         when(offerRepository.findDueOffers(eq(1L), any(), any())).thenReturn(List.of(offer(10L, 120)));
-        when(offerRepository.findByFeedIdAndPartFalseAndPriceIsNotNullAndFirstSeenAfter(eq(1L), any()))
+        when(offerRepository.findSizedComparables(eq(1L), any()))
                 .thenReturn(comps(450, 5));
 
         publisher(25).publishDue();
@@ -107,7 +107,7 @@ class FurniturePublisherTest {
         wireFeed();
         // 400 vs median 450 = -11%, below the -25% deal bar
         when(offerRepository.findDueOffers(eq(1L), any(), any())).thenReturn(List.of(offer(10L, 400)));
-        when(offerRepository.findByFeedIdAndPartFalseAndPriceIsNotNullAndFirstSeenAfter(eq(1L), any()))
+        when(offerRepository.findSizedComparables(eq(1L), any()))
                 .thenReturn(comps(450, 5));
 
         FurnitureOffer due = offer(10L, 400);
@@ -123,7 +123,7 @@ class FurniturePublisherTest {
     void skipsWhenModelMedianHasTooFewComparables() throws Exception {
         wireFeed();
         when(offerRepository.findDueOffers(eq(1L), any(), any())).thenReturn(List.of(offer(10L, 120)));
-        when(offerRepository.findByFeedIdAndPartFalseAndPriceIsNotNullAndFirstSeenAfter(eq(1L), any()))
+        when(offerRepository.findSizedComparables(eq(1L), any()))
                 .thenReturn(comps(450, 4)); // below MIN_SAMPLE
 
         publisher(25).publishDue();
@@ -141,7 +141,7 @@ class FurniturePublisherTest {
         comps.addAll(compsV("W80", 320, 5, 1000));
         comps.addAll(compsV("W40", 1000, 8, 2000));
         when(offerRepository.findDueOffers(eq(1L), any(), any())).thenReturn(List.of(due));
-        when(offerRepository.findByFeedIdAndPartFalseAndPriceIsNotNullAndFirstSeenAfter(eq(1L), any()))
+        when(offerRepository.findSizedComparables(eq(1L), any()))
                 .thenReturn(comps);
 
         publisher(25).publishDue();
@@ -160,7 +160,7 @@ class FurniturePublisherTest {
         comps.addAll(compsV("W80", 300, 4, 1000));
         comps.addAll(compsV("W40", 1000, 6, 2000));
         when(offerRepository.findDueOffers(eq(1L), any(), any())).thenReturn(List.of(due));
-        when(offerRepository.findByFeedIdAndPartFalseAndPriceIsNotNullAndFirstSeenAfter(eq(1L), any()))
+        when(offerRepository.findSizedComparables(eq(1L), any()))
                 .thenReturn(comps);
 
         publisher(25).publishDue();
@@ -174,7 +174,7 @@ class FurniturePublisherTest {
         wireFeed();
         when(offerRepository.findDueOffers(eq(1L), any(), any()))
                 .thenReturn(List.of(offer(10L, 120), offer(11L, 130), offer(12L, 140)));
-        when(offerRepository.findByFeedIdAndPartFalseAndPriceIsNotNullAndFirstSeenAfter(eq(1L), any()))
+        when(offerRepository.findSizedComparables(eq(1L), any()))
                 .thenReturn(comps(450, 6));
 
         publisher(25).publishDue();
@@ -192,7 +192,7 @@ class FurniturePublisherTest {
         wireFeed();
         FurnitureOffer due = offer(10L, 120);
         when(offerRepository.findDueOffers(eq(1L), any(), any())).thenReturn(List.of(due));
-        when(offerRepository.findByFeedIdAndPartFalseAndPriceIsNotNullAndFirstSeenAfter(eq(1L), any()))
+        when(offerRepository.findSizedComparables(eq(1L), any()))
                 .thenReturn(comps(450, 6));
         // last burst 3 minutes ago, below the 60-minute spacing
         when(offerRepository.findMaxPostedAtByChannelChatId(anyLong()))
@@ -213,7 +213,7 @@ class FurniturePublisherTest {
                 Duration.ofDays(35), 25, 0, 24);
         when(offerRepository.findDueOffers(eq(1L), any(), any()))
                 .thenReturn(List.of(offer(10L, 120), offer(11L, 130)));
-        when(offerRepository.findByFeedIdAndPartFalseAndPriceIsNotNullAndFirstSeenAfter(eq(1L), any()))
+        when(offerRepository.findSizedComparables(eq(1L), any()))
                 .thenReturn(comps(450, 6));
 
         p.publishDue();
@@ -229,7 +229,7 @@ class FurniturePublisherTest {
         wireFeed();
         FurnitureOffer due = offer(10L, 120);
         when(offerRepository.findDueOffers(eq(1L), any(), any())).thenReturn(List.of(due));
-        when(offerRepository.findByFeedIdAndPartFalseAndPriceIsNotNullAndFirstSeenAfter(eq(1L), any()))
+        when(offerRepository.findSizedComparables(eq(1L), any()))
                 .thenReturn(comps(450, 6));
 
         publisher(25).publishDue();
@@ -252,7 +252,7 @@ class FurniturePublisherTest {
         when(channelRepository.findById(-100L)).thenReturn(Optional.of(
                 Channel.builder().chatId(-100L).username("ikea_waw_deals").build()));
         when(offerRepository.findDueOffers(eq(1L), any(), any())).thenReturn(List.of(offer(10L, 300)));
-        when(offerRepository.findByFeedIdAndPartFalseAndPriceIsNotNullAndFirstSeenAfter(eq(1L), any()))
+        when(offerRepository.findSizedComparables(eq(1L), any()))
                 .thenReturn(comps(800, 6)); // 300 vs 800 = -63% (HALF_UP)
 
         publisher(25).publishDue();

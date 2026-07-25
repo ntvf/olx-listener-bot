@@ -89,7 +89,7 @@ public class FurniturePublisher {
             List<FurnitureOffer> comps = null; // fetched lazily, once per feed
             for (FurnitureOffer offer : offerRepository.findDueOffers(feed.getId(), cutoff, minCreated)) {
                 if (comps == null) {
-                    comps = offerRepository.findByFeedIdAndPartFalseAndPriceIsNotNullAndFirstSeenAfter(
+                    comps = offerRepository.findSizedComparables(
                             feed.getId(), Instant.now().minus(comparablesWindow));
                 }
                 dealFor(offer, comps).ifPresent(deals::add);

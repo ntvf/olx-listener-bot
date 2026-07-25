@@ -16,11 +16,14 @@ public interface FurnitureOfferRepository extends JpaRepository<FurnitureOffer, 
     Set<String> findHashesByFeedId(@Param("feedId") long feedId);
 
     /**
-     * Whole-unit listings queued for posting: old enough (by real creation time), not stale,
-     * not a part. The discount threshold is applied in Java once the model median is computed.
+     * Whole-unit listings queued for posting: old enough (by real creation time), not stale, not a
+     * part, and <b>sized</b> — {@code variant IS NOT NULL}, i.e. a dimension was parsed from text or
+     * recovered from the photo by AI. Unsized listings (dim_source none/none_ai) are held back so a
+     * deal is never posted on a size-blurred median; they become postable only once the photo
+     * enricher gives them a variant. The discount threshold is applied in Java once the median holds.
      */
     @Query("SELECT o FROM FurnitureOffer o WHERE o.feedId = :feedId AND o.postedAt IS NULL "
-            + "AND o.part = false AND o.price IS NOT NULL "
+            + "AND o.part = false AND o.price IS NOT NULL AND o.variant IS NOT NULL "
             + "AND COALESCE(o.listingCreatedAt, o.publishedAt) <= :cutoff "
             + "AND (o.listingCreatedAt IS NULL OR o.listingCreatedAt >= :minCreated) "
             + "ORDER BY COALESCE(o.listingCreatedAt, o.publishedAt) ASC")
@@ -32,9 +35,14 @@ public interface FurnitureOfferRepository extends JpaRepository<FurnitureOffer, 
             + "WHERE o.feedId = f.id AND f.channelChatId = :chatId")
     Instant findMaxPostedAtByChannelChatId(@Param("chatId") long chatId);
 
-    /** Whole-unit comparables for the model median, drawn from the same feed's retained history. */
-    List<FurnitureOffer> findByFeedIdAndPartFalseAndPriceIsNotNullAndFirstSeenAfter(
-            long feedId, Instant since);
+    /**
+     * Whole-unit comparables for the model/variant median, from the same feed's retained history.
+     * Only <b>sized</b> listings ({@code variant IS NOT NULL}) count, so an unsized-and-unscored
+     * listing never skews another offer's median — the median is built from known-size units only.
+     */
+    @Query("SELECT o FROM FurnitureOffer o WHERE o.feedId = :feedId AND o.part = false "
+            + "AND o.price IS NOT NULL AND o.variant IS NOT NULL AND o.firstSeen > :since")
+    List<FurnitureOffer> findSizedComparables(@Param("feedId") long feedId, @Param("since") Instant since);
 
     /**
      * Whole units the text parser could not size ({@code dim_source = 'none'}), newest first, for the
