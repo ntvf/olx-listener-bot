@@ -80,26 +80,38 @@ public class FurniturePhotoEnricher {
         });
     }
 
-    private void enrichBatch() {
+    void enrichBatch() {
         List<FurnitureOffer> candidates = offerRepository.findPhotoCandidates(PageRequest.of(0, batchPerTick));
         for (FurnitureOffer offer : candidates) {
-            try {
-                enrichOne(offer);
-            } catch (Exception e) {
-                log.warn("Photo enrich failed for offer {} ({}), leaving on model median",
-                        offer.getId(), offer.getUrl(), e);
-                mark(offer, null, null, "none_ai"); // tried once; do not re-query
+            if (!enrichOne(offer)) {
+                // Transient block (unsolved CAPTCHA / wedged browser) — and it's global, not about this
+                // one offer. Stop the batch: the offer stays dim_source='none' so a solved CAPTCHA on a
+                // later tick can still size it, instead of being burned to 'none_ai' on a single miss.
+                break;
             }
         }
     }
 
-    private void enrichOne(FurnitureOffer offer) throws Exception {
+    /**
+     * @return {@code true} once the offer reaches a terminal size decision (marked {@code photo} or
+     * {@code none_ai}); {@code false} on a transient block, leaving it {@code none} to retry next tick.
+     */
+    private boolean enrichOne(FurnitureOffer offer) {
         // Per-feed chat when known (captured at /ikea-link); else the global operator DM, so feeds
         // linked before admin_chat_id existed still get their CAPTCHA routed without a DB edit.
         Long adminChatId = feedRepository.findById(offer.getFeedId())
                 .map(FurnitureFeed::getAdminChatId)
                 .orElse(fallbackAdminChatId != 0 ? fallbackAdminChatId : null);
-        Path image = download(offer.getImageUrl());
+        Path image;
+        try {
+            image = download(offer.getImageUrl());
+        } catch (Exception e) {
+            // The listing's own photo is unreachable; re-querying will not help — burn it once.
+            log.warn("Photo unreachable for offer {} ({}), leaving on model median",
+                    offer.getId(), offer.getUrl(), e);
+            mark(offer, null, null, "none_ai");
+            return true;
+        }
         try {
             String answer = photoService.describe(image, event -> notifyCaptcha(adminChatId, event));
             Optional<FurnitureVariantParser.Variant> variant = FurnitureAiAnswerParser.fromAiAnswer(answer);
@@ -107,11 +119,26 @@ public class FurniturePhotoEnricher {
                 mark(offer, variant.get().label(), variant.get().primaryDimCm(), "photo");
                 log.info("Photo-sized offer {} as {} ({})", offer.getId(), variant.get().label(), offer.getModel());
             } else {
-                mark(offer, null, null, "none_ai");
+                mark(offer, null, null, "none_ai"); // AI answered but gave no size — permanent, do not re-query
             }
+            return true;
+        } catch (Exception e) {
+            // CAPTCHA not solved in time or a wedged browser: transient and usually global. Leave the
+            // offer on dim_source='none' so it is retried once access recovers, rather than lost forever.
+            log.warn("Photo enrich blocked for offer {} ({}); will retry, staying on model median",
+                    offer.getId(), offer.getUrl(), e);
+            return false;
         } finally {
             captchaTunnelService.close();
+            deleteQuietly(image);
+        }
+    }
+
+    private void deleteQuietly(Path image) {
+        try {
             Files.deleteIfExists(image);
+        } catch (Exception e) {
+            log.debug("temp photo cleanup failed for {}", image, e);
         }
     }
 
