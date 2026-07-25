@@ -32,6 +32,26 @@ public class ListingEnricher {
     private static final Pattern EXTRA_RENT = Pattern.compile("(?iu)czynsz\\s*\\(dodatkowo\\):?\\s*([\\d\\s]+[.,]?\\d*)\\s*zł");
     private static final Pattern GENERIC_AREA = Pattern.compile("(?u)(\\d{2,3})\\s*m²");
 
+    /**
+     * When the structured "Czynsz (dodatkowo)" field is left blank, the extra monthly fee is often
+     * stated only in the free-text description ("plus 800 zł zaliczka na media", "czynsz
+     * administracyjny 500 zł"). Each pattern is anchored on a fee noun — media / administracyjny /
+     * spółdzielnia / opłaty eksploatacyjne — or an additive marker, never on a bare "czynsz", so the
+     * base rent ("czynsz najmu to 4200 zł") is never captured as the extra fee. No match, no czynsz.
+     */
+    private static final Pattern[] DESC_RENT = {
+            // "plus 800 zł zaliczka na media", "+ 500 zł opłaty administracyjne"
+            Pattern.compile("(?iu)(?:plus|oprócz|dodatkowo|\\+)\\s*([\\d\\s]{2,7})\\s*zł\\s*"
+                    + "(?:zaliczk\\w*|(?:na\\s+)?media|opłat\\w*|administrac\\w*|licznik\\w*)"),
+            // "czynsz administracyjny 500 zł", "czynsz do spółdzielni: 600 zł", "opłaty eksploatacyjne 400 zł"
+            Pattern.compile("(?iu)(?:czynsz\\s+(?:administracyjn\\w+|do\\s+(?:spółdzielni|wspólnoty|administracji)"
+                    + "|dla\\s+(?:spółdzielni|wspólnoty))|opłat\\w+\\s+(?:administracyjn\\w+|eksploatacyjn\\w+))"
+                    + "\\D{0,10}([\\d\\s]{2,7})\\s*zł"),
+            // "800 zł zaliczki na media", "500 zł czynszu administracyjnego"
+            Pattern.compile("(?iu)([\\d\\s]{2,7})\\s*zł\\s+(?:zaliczk\\w*\\s+na\\s+media"
+                    + "|czynsz\\w*\\s+administracyjn\\w*|opłat\\w+\\s+(?:administracyjn|eksploatacyjn)\\w*)"),
+    };
+
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     /** When true, OLX-native listings also get their phone via the limited-phones API. */
@@ -198,6 +218,7 @@ public class ListingEnricher {
 
         m = EXTRA_RENT.matcher(params);
         if (m.find()) out.extraRent(toNumber(m.group(1)));
+        else out.extraRent(czynszFromDescription(description));
 
         String paramsLower = params.toLowerCase(Locale.ROOT);
         if (paramsLower.contains("firmowe") || paramsLower.contains("business")) {
@@ -235,12 +256,13 @@ public class ListingEnricher {
             if (ad.isMissingNode() || ad.isNull()) return out.build();
 
             // characteristics carry price / rent (czynsz) / area / room count as flat key-value rows
+            boolean hasStructuredRent = false;
             for (JsonNode c : ad.path("characteristics")) {
                 String key = c.path("key").asText("");
                 String value = c.path("value").asText(null);
                 switch (key) {
                     case "price" -> out.price(toNumber(value));
-                    case "rent" -> out.extraRent(toNumber(value));
+                    case "rent" -> { out.extraRent(toNumber(value)); hasStructuredRent = true; }
                     case "m" -> out.areaM2(toNumber(value));
                     case "rooms_num" -> out.rooms(parseRooms(value));
                     default -> { }
@@ -263,7 +285,11 @@ public class ListingEnricher {
             out.phone(normalizePhone(firstPhone(ad)));
 
             String desc = ad.path("description").asText(null);
-            if (StringUtils.isNotBlank(desc)) out.description(Jsoup.parse(desc).text());
+            if (StringUtils.isNotBlank(desc)) {
+                String plain = Jsoup.parse(desc).text();
+                out.description(plain);
+                if (!hasStructuredRent) out.extraRent(czynszFromDescription(plain));
+            }
 
             JsonNode images = ad.path("images");
             if (images.isArray() && !images.isEmpty()) {
@@ -380,6 +406,16 @@ public class ListingEnricher {
         } catch (Exception e) {
             return null;
         }
+    }
+
+    /** Extra monthly fee pulled from the free-text description; null when no fee-anchored number is present. */
+    static BigDecimal czynszFromDescription(String description) {
+        if (description == null) return null;
+        for (Pattern p : DESC_RENT) {
+            Matcher m = p.matcher(description);
+            if (m.find()) return toNumber(m.group(1));
+        }
+        return null;
     }
 
     static BigDecimal toNumber(String raw) {

@@ -88,6 +88,81 @@ class ListingEnricherTest {
         assertTrue(e.description().contains("bez prowizji"));
     }
 
+    /**
+     * When OLX's structured "Czynsz (dodatkowo)" field is blank, the extra fee is recovered from the
+     * description. Mirrors the live Saska Kępa ad where "Czynsz najmu to 4200 zł" names the base rent
+     * with the word czynsz — only the "plus 800 zł ... media" clause is the additional fee.
+     */
+    @Test
+    void recoversExtraRentFromDescriptionWhenParamMissing() {
+        String html = """
+                <html><head>
+                <script type="application/ld+json">
+                {"@type":"Product","offers":{"priceCurrency":"PLN","price":4200}}
+                </script></head><body>
+                <div data-testid="ad-parameters-container">
+                  <p>Prywatne</p><p>Powierzchnia: 60 m²</p><p>Liczba pokoi: 2</p>
+                </div>
+                <div data-cy="ad_description">Czynsz najmu to 4200 zł plus 800 zł zaliczka na media. Wymagana kaucja.</div>
+                </body></html>
+                """;
+        ListingEnricher.Enriched e = enricher.parse(Jsoup.parse(html));
+        assertEquals(0, e.price().compareTo(BigDecimal.valueOf(4200)));
+        assertEquals(0, e.extraRent().compareTo(BigDecimal.valueOf(800)));
+    }
+
+    /** Otodom too: when the ad has no structured "rent" characteristic, czynsz is recovered from the description. */
+    @Test
+    void recoversOtodomExtraRentFromDescription() {
+        String html = """
+                <html><body>
+                <script id="__NEXT_DATA__" type="application/json">
+                {"props":{"pageProps":{"ad":{
+                  "advertType":"PRIVATE",
+                  "characteristics":[{"key":"price","value":"3500"},{"key":"m","value":"42"},{"key":"rooms_num","value":"2"}],
+                  "location":{"reverseGeocoding":{"locations":[{"locationLevel":"city_or_village","name":"Warszawa"}]}},
+                  "owner":{"id":77,"name":"Jan"},
+                  "description":"<p>Do najmu 3500 zł, czynsz administracyjny 480 zł.</p>"
+                }}}}
+                </script></body></html>
+                """;
+        ListingEnricher.Enriched e = enricher.parseOtodom(Jsoup.parse(html));
+        assertEquals(0, e.price().compareTo(BigDecimal.valueOf(3500)));
+        assertEquals(0, e.extraRent().compareTo(BigDecimal.valueOf(480)));
+    }
+
+    /** A structured "rent" characteristic always wins; the description is not consulted. */
+    @Test
+    void otodomStructuredRentWinsOverDescription() {
+        String html = """
+                <html><body>
+                <script id="__NEXT_DATA__" type="application/json">
+                {"props":{"pageProps":{"ad":{
+                  "characteristics":[{"key":"price","value":"3500"},{"key":"rent","value":"600"}],
+                  "description":"<p>czynsz administracyjny 480 zł</p>"
+                }}}}
+                </script></body></html>
+                """;
+        ListingEnricher.Enriched e = enricher.parseOtodom(Jsoup.parse(html));
+        assertEquals(0, e.extraRent().compareTo(BigDecimal.valueOf(600)));
+    }
+
+    @Test
+    void czynszFromDescriptionVariants() {
+        assertEquals(0, ListingEnricher.czynszFromDescription(
+                "Cena 3000 zł, czynsz administracyjny 500 zł.").compareTo(BigDecimal.valueOf(500)));
+        assertEquals(0, ListingEnricher.czynszFromDescription(
+                "Do tego czynsz do spółdzielni: 620 zł.").compareTo(BigDecimal.valueOf(620)));
+        assertEquals(0, ListingEnricher.czynszFromDescription(
+                "Najem plus 450 zł opłaty administracyjne.").compareTo(BigDecimal.valueOf(450)));
+        assertEquals(0, ListingEnricher.czynszFromDescription(
+                "Do zapłaty 1 200 zł zaliczki na media miesięcznie.").compareTo(BigDecimal.valueOf(1200)));
+        // base rent carrying the word "czynsz" must never be captured as the extra fee
+        assertNull(ListingEnricher.czynszFromDescription("Czynsz najmu wynosi 4200 zł, media wg zużycia."));
+        assertNull(ListingEnricher.czynszFromDescription("Bezpośrednio, bez dodatkowych opłat."));
+        assertNull(ListingEnricher.czynszFromDescription(null));
+    }
+
     @Test
     void kawalerkaMeansOneRoom() {
         String html = """
