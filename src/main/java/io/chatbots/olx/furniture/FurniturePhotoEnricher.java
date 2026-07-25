@@ -129,7 +129,7 @@ public class FurniturePhotoEnricher {
                     offer.getId(), offer.getUrl(), e);
             return false;
         } finally {
-            captchaTunnelService.close();
+            captchaTunnelService.release();
             deleteQuietly(image);
         }
     }

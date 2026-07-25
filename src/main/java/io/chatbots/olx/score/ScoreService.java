@@ -72,7 +72,7 @@ public class ScoreService {
             log.warn("AI Mode search failed for {}", listingUrl, e);
             return "❌ AI search failed: " + e.getMessage();
         } finally {
-            captchaTunnelService.close();
+            captchaTunnelService.release();
         }
         return formatSummary(listing, answer);
     }

@@ -34,6 +34,44 @@ class CaptchaTunnelServiceTest {
     }
 
     @Test
+    void reusesLiveTunnelInsteadOfRespawning() throws Exception {
+        Path launches = Files.createTempFile("cf-launches", ".log");
+        Path script = fakeCloudflared(
+                "echo x >> " + launches + "\n"
+                        + "echo '2026-07-12 INF |  https://reused-1234.trycloudflare.com  |' >&2\n"
+                        + "sleep 30\n");
+        CaptchaTunnelService service = service("", script.toString());
+        try {
+            String first = service.openAccessUrl();
+            String second = service.openAccessUrl(); // same live process — must not respawn
+            assertEquals(first, second);
+            assertEquals(1, Files.readAllLines(launches).size(), "tunnel respawned instead of being reused");
+        } finally {
+            service.close();
+        }
+    }
+
+    @Test
+    void releaseKeepsTunnelAliveWithinIdleWindow() throws Exception {
+        Path launches = Files.createTempFile("cf-launches", ".log");
+        Path script = fakeCloudflared(
+                "echo x >> " + launches + "\n"
+                        + "echo '2026-07-12 INF |  https://idle-1234.trycloudflare.com  |' >&2\n"
+                        + "sleep 30\n");
+        CaptchaTunnelService service = service("", script.toString());
+        set(service, "tunnelIdleMinutes", 15); // release schedules a close far in the future, not now
+        try {
+            String first = service.openAccessUrl();
+            service.release();                       // attempt done, but tunnel should linger
+            String second = service.openAccessUrl(); // still the same live tunnel
+            assertEquals(first, second);
+            assertEquals(1, Files.readAllLines(launches).size(), "tunnel closed on release instead of lingering");
+        } finally {
+            service.close();
+        }
+    }
+
+    @Test
     void returnsNullWhenProcessPrintsNoUrl() throws Exception {
         Path script = fakeCloudflared("echo 'failed to connect' >&2\nexit 1\n");
         CaptchaTunnelService service = service("", script.toString());
