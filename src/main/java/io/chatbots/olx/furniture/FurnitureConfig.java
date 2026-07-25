@@ -59,10 +59,12 @@ public class FurnitureConfig {
 
     @Bean
     public FurnitureCatalogScraper furnitureCatalogScraper(FurnitureCatalogPriceRepository catalogRepository,
+                                                           FurnitureCatalogCrawlRepository crawlRepository,
                                                            @Value("${furniture.catalog.enabled:true}") boolean enabled,
                                                            @Value("${furniture.catalog.max-age-days:45}") long maxAgeDays,
                                                            @Value("${furniture.catalog.fetch-pause-ms:700}") long fetchPauseMs) {
-        return new FurnitureCatalogScraper(catalogRepository, enabled, Duration.ofDays(maxAgeDays), fetchPauseMs);
+        return new FurnitureCatalogScraper(catalogRepository, crawlRepository, enabled,
+                Duration.ofDays(maxAgeDays), fetchPauseMs);
     }
 
     @Bean

@@ -158,4 +158,12 @@
         <sqlFile path="furniture-catalog-schema.sql" relativeToChangelogFile="true"/>
     </changeSet>
 
+    <changeSet id="14" author="tymur">
+        <comment>
+            Per-URL staging so the multi-hour catalog crawl resumes after a restart/deploy instead
+            of starting over. Aggregated into furniture_catalog_prices and cleared on completion.
+        </comment>
+        <sqlFile path="furniture-catalog-crawl-schema.sql" relativeToChangelogFile="true"/>
+    </changeSet>
+
 </databaseChangeLog>

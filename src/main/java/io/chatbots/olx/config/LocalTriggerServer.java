@@ -49,6 +49,7 @@ public class LocalTriggerServer {
         actions.put("ikea-publish", furniturePublisher::publishDue);
         actions.put("ikea-enrich", furniturePhotoEnricher::tick);
         actions.put("ikea-catalog", furnitureCatalogScraper::refreshNow);
+        actions.put("ikea-catalog-force", furnitureCatalogScraper::forceRefresh);
         actions.put("rental-poll", channelPoller::pollAll);
         actions.put("rental-publish", channelPublisher::publishDue);
     }
