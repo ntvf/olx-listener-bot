@@ -11,6 +11,8 @@ CREATE TABLE furniture_feeds
     feed_url        VARCHAR(2048) NOT NULL,
     label           VARCHAR(64),
     active          BOOLEAN       NOT NULL DEFAULT true,
+    -- operator chat that ran /ikea-link; AI-Mode photo CAPTCHA prompts are sent here, not the channel
+    admin_chat_id   BIGINT,
     created_at      TIMESTAMP     NOT NULL DEFAULT NOW()
 );
 
@@ -26,6 +28,14 @@ CREATE TABLE furniture_offers
     price              NUMERIC(12, 2),
     currency           VARCHAR(8),
     model              VARCHAR(32),
+    -- parsed sub-model variant (width / drawer count / seat count / Kallax grid); with model it
+    -- forms the median group so different-sized units of one model are priced apart. dim_source
+    -- says where it came from: 'text' (title+desc), 'photo' (AI Mode), or 'none'.
+    variant            VARCHAR(48),
+    primary_dim        INT,
+    dim_source         VARCHAR(8),
+    -- full listing description (fetched at enrich time); kept for variant parsing and re-parsing.
+    description        TEXT,
     -- true for parts/accessories (a door, drawer, cover…) or sub-floor prices: kept out of
     -- the model median and never posted, but stored so they aren't re-enriched every poll.
     part               BOOLEAN     NOT NULL DEFAULT false,
@@ -40,3 +50,4 @@ CREATE TABLE furniture_offers
 CREATE INDEX idx_furniture_offers_first_seen ON furniture_offers (first_seen);
 CREATE INDEX idx_furniture_offers_published_at ON furniture_offers (published_at);
 CREATE INDEX idx_furniture_offers_feed_model ON furniture_offers (feed_id, model);
+CREATE INDEX idx_furniture_offers_feed_variant ON furniture_offers (feed_id, model, variant);

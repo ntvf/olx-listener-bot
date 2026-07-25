@@ -121,4 +121,33 @@
         </sql>
     </changeSet>
 
+    <changeSet id="11" author="tymur">
+        <comment>
+            Finer median groups for IKEA: store the (already-fetched) description and the parsed
+            variant (dimensions / drawer / seat / grid) so a BILLY 80 is priced against BILLY 80s,
+            not all BILLYs. dim_source records where the variant came from (text | photo | none).
+        </comment>
+        <addColumn tableName="furniture_offers">
+            <column name="description" type="text"/>
+            <column name="variant" type="varchar(48)"/>
+            <column name="primary_dim" type="int"/>
+            <column name="dim_source" type="varchar(8)"/>
+        </addColumn>
+        <createIndex tableName="furniture_offers" indexName="idx_furniture_offers_feed_variant">
+            <column name="feed_id"/>
+            <column name="model"/>
+            <column name="variant"/>
+        </createIndex>
+    </changeSet>
+
+    <changeSet id="12" author="tymur">
+        <comment>
+            Route the AI-Mode photo CAPTCHA back to the operator chat that ran /ikea-link, not the
+            public channel. Nullable: feeds linked before this stay silent (no photo enrichment).
+        </comment>
+        <addColumn tableName="furniture_feeds">
+            <column name="admin_chat_id" type="bigint"/>
+        </addColumn>
+    </changeSet>
+
 </databaseChangeLog>

@@ -1,6 +1,7 @@
 package io.chatbots.olx.furniture;
 
 import io.chatbots.olx.furniture.entity.FurnitureOffer;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -34,4 +35,14 @@ public interface FurnitureOfferRepository extends JpaRepository<FurnitureOffer, 
     /** Whole-unit comparables for the model median, drawn from the same feed's retained history. */
     List<FurnitureOffer> findByFeedIdAndPartFalseAndPriceIsNotNullAndFirstSeenAfter(
             long feedId, Instant since);
+
+    /**
+     * Whole units the text parser could not size ({@code dim_source = 'none'}), newest first, for the
+     * AI-Mode photo enricher. Once tried they become {@code 'photo'} (found) or {@code 'none_ai'}
+     * (no luck) so they are not re-queried; either way the offer can still post on the model median.
+     */
+    @Query("SELECT o FROM FurnitureOffer o WHERE o.part = false AND o.model IS NOT NULL "
+            + "AND o.imageUrl IS NOT NULL AND o.price IS NOT NULL AND o.dimSource = 'none' "
+            + "ORDER BY o.firstSeen DESC")
+    List<FurnitureOffer> findPhotoCandidates(Pageable pageable);
 }

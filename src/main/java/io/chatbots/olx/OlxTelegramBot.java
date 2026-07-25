@@ -302,8 +302,9 @@ public class OlxTelegramBot implements LongPollingSingleThreadUpdateConsumer {
         }
         String text = getText(update);
         String reply = channelAdminService.handleCommand(text);
-        // same admin gate serves the isolated IKEA feed commands (/ikea, /ikea-link, /ikea-unlink)
-        if (reply == null) reply = furnitureAdminService.handleCommand(text);
+        // same admin gate serves the isolated IKEA feed commands (/ikea, /ikea-link, /ikea-unlink);
+        // the chat id is stored on the feed so the AI-Mode photo CAPTCHA prompt returns here
+        if (reply == null) reply = furnitureAdminService.handleCommand(text, update.getMessage().getChatId());
         if (reply == null) return HandleResult.EMPTY;
         return HandleResult.builder().botApiMethod(
                 SendMessage.builder()

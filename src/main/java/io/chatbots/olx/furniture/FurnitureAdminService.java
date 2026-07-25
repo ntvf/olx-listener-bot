@@ -24,13 +24,17 @@ public class FurnitureAdminService {
     private final FurnitureFeedRepository feedRepository;
     private final OlxGrabber grabber;
 
-    /** @return reply text, or null when the message is not a furniture-admin command */
-    public String handleCommand(String text) {
+    /**
+     * @param adminChatId the chat the command came from; stored on a linked feed so the AI-Mode
+     *                    photo CAPTCHA prompt is sent back here rather than to the public channel
+     * @return reply text, or null when the message is not a furniture-admin command
+     */
+    public String handleCommand(String text, long adminChatId) {
         if (text == null) return null;
         String[] parts = text.trim().split("\\s+");
         return switch (parts[0]) {
             case "/ikea" -> listFeeds();
-            case "/ikea-link" -> link(parts);
+            case "/ikea-link" -> link(parts, adminChatId);
             case "/ikea-unlink" -> unlink(parts);
             default -> null;
         };
@@ -53,7 +57,7 @@ public class FurnitureAdminService {
         return sb.toString();
     }
 
-    private String link(String[] parts) {
+    private String link(String[] parts, long adminChatId) {
         if (parts.length < 3) return "Usage: /ikea-link <chat_id|@username|title> <search-url> [label]";
         Optional<Channel> channel = resolveChannel(parts[1]);
         if (channel.isEmpty()) return "Channel not found: " + parts[1] + "\nUse /channels to list known channels.";
@@ -66,6 +70,7 @@ public class FurnitureAdminService {
                 .feedUrl(url)
                 .label(label)
                 .active(true)
+                .adminChatId(adminChatId)
                 .createdAt(Instant.now())
                 .build());
         return "Linked IKEA feed " + feed.getId() + " to channel " + channel.get().getChatId()

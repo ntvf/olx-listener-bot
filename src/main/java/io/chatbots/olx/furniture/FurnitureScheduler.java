@@ -22,6 +22,7 @@ public class FurnitureScheduler implements SchedulingConfigurer {
 
     private final FurnitureFeedPoller poller;
     private final FurniturePublisher publisher;
+    private final FurniturePhotoEnricher photoEnricher;
 
     @Value("${furniture.poll-min-seconds:300}")
     private long pollMinSeconds;
@@ -31,6 +32,15 @@ public class FurnitureScheduler implements SchedulingConfigurer {
     @Scheduled(fixedDelayString = "${furniture.publish-interval-ms:300000}")
     public void publish() {
         publisher.publishDue();
+    }
+
+    /**
+     * Kicks the photo enricher; it hands off to its own thread and returns immediately, so this
+     * never delays polling or publishing. No-op unless {@code furniture.photo-ai.enabled}.
+     */
+    @Scheduled(fixedDelayString = "${furniture.photo-ai.interval-ms:600000}")
+    public void enrichPhotos() {
+        photoEnricher.tick();
     }
 
     @Override

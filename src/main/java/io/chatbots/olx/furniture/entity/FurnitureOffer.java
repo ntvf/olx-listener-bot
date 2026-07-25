@@ -47,9 +47,29 @@ public class FurnitureOffer {
     @Column(length = 8)
     private String currency;
 
-    /** The IKEA model this listing was bucketed under; drives the median segment. */
+    /** The IKEA model this listing was bucketed under; with {@link #variant} drives the median segment. */
     @Column(length = 32)
     private String model;
+
+    /**
+     * Parsed sub-model variant (width {@code W80}, drawer {@code D3}, seat {@code S2}, Kallax grid
+     * mapped to width). {@code model + variant} is the median group, so different-sized units of one
+     * model are priced apart. Null when neither text nor photo yielded a size.
+     */
+    @Column(length = 48)
+    private String variant;
+
+    /** The variant's width in cm when known (from dimensions or a mapped grid); else null. */
+    @Column(name = "primary_dim")
+    private Integer primaryDim;
+
+    /** Where {@link #variant} came from: {@code text} (title+desc), {@code photo} (AI Mode), or {@code none}. */
+    @Column(name = "dim_source", length = 8)
+    private String dimSource;
+
+    /** Full listing description (fetched at enrich time); kept for variant parsing and re-parsing. */
+    @Column(columnDefinition = "text")
+    private String description;
 
     /**
      * True for parts/accessories (a door, drawer, cover…) or sub-floor prices. Kept out of the

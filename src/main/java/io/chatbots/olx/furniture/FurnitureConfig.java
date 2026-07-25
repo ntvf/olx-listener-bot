@@ -3,6 +3,7 @@ package io.chatbots.olx.furniture;
 import io.chatbots.olx.channel.ChannelRepository;
 import io.chatbots.olx.channel.ListingEnricher;
 import io.chatbots.olx.grabber.OlxGrabber;
+import io.chatbots.olx.score.CaptchaTunnelService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -53,5 +54,24 @@ public class FurnitureConfig {
                                                        FurnitureFeedRepository feedRepository,
                                                        OlxGrabber grabber) {
         return new FurnitureAdminService(channelRepository, feedRepository, grabber);
+    }
+
+    @Bean
+    public FurniturePhotoDimensionService furniturePhotoDimensionService() {
+        // Its own Playwright profile keeps it separate from the score feature's AI-Mode browser.
+        return new FurniturePhotoDimensionService();
+    }
+
+    @Bean
+    public FurniturePhotoEnricher furniturePhotoEnricher(FurnitureOfferRepository offerRepository,
+                                                         FurnitureFeedRepository feedRepository,
+                                                         FurniturePhotoDimensionService photoService,
+                                                         CaptchaTunnelService captchaTunnelService,
+                                                         TelegramClient telegramClient,
+                                                         @Value("${furniture.photo-ai.enabled:true}") boolean enabled,
+                                                         @Value("${furniture.photo-ai.batch-per-tick:2}") int batchPerTick,
+                                                         @Value("${channel.admin-user-id:0}") long fallbackAdminChatId) {
+        return new FurniturePhotoEnricher(offerRepository, feedRepository, photoService,
+                captchaTunnelService, telegramClient, enabled, batchPerTick, fallbackAdminChatId);
     }
 }

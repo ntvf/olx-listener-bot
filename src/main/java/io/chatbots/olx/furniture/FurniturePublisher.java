@@ -113,14 +113,25 @@ public class FurniturePublisher {
         }
     }
 
-    /** A deal only if the model median holds enough comparables and the ask clears the discount bar. */
+    /**
+     * A deal only if the median group holds enough comparables and the ask clears the discount bar.
+     * Prefers the tight {@code model+variant} group (a BILLY 80 vs other BILLY 80s); falls back to
+     * the bare-model median when that variant group is too small, so finer grouping never loses a
+     * postable deal versus the old per-model behaviour.
+     */
     private Optional<Deal> dealFor(FurnitureOffer offer, List<FurnitureOffer> comps) {
+        List<BigDecimal> sameVariant = new ArrayList<>();
         List<BigDecimal> sameModel = new ArrayList<>();
         for (FurnitureOffer c : comps) {
             if (c.getId().equals(offer.getId())) continue;
-            if (Objects.equals(c.getModel(), offer.getModel())) sameModel.add(c.getPrice());
+            if (!Objects.equals(c.getModel(), offer.getModel())) continue;
+            sameModel.add(c.getPrice());
+            if (offer.getVariant() != null && Objects.equals(c.getVariant(), offer.getVariant())) {
+                sameVariant.add(c.getPrice());
+            }
         }
-        return FurnitureScorer.score(offer.getPrice(), sameModel, FurnitureScorer.MIN_SAMPLE)
+        List<BigDecimal> group = sameVariant.size() >= FurnitureScorer.MIN_SAMPLE ? sameVariant : sameModel;
+        return FurnitureScorer.score(offer.getPrice(), group, FurnitureScorer.MIN_SAMPLE)
                 .filter(s -> s.isDealAtLeast(minDiscountPct))
                 .map(s -> new Deal(offer, s));
     }

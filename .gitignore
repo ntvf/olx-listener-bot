@@ -27,3 +27,5 @@ hs_err_pid*
 .idea
 target
 .ai-chrome-profile/
+.ai-chrome-furniture-profile/
+.ai-chrome-probe-profile/

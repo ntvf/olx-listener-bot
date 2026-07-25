@@ -42,6 +42,10 @@ public class FurnitureFeed {
     @Column(nullable = false)
     private boolean active;
 
+    /** Operator chat that ran /ikea-link; the AI-Mode photo CAPTCHA prompt is sent here, not the channel. */
+    @Column(name = "admin_chat_id")
+    private Long adminChatId;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 }

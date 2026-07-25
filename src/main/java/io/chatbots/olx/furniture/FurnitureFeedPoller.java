@@ -66,15 +66,24 @@ public class FurnitureFeedPoller {
             boolean part = model == null
                     || FurnitureClassifier.isPart(offer.getName(), details.price());
 
+            // Parse the median variant from title + the description we just fetched (else discarded):
+            // model+variant is the median group, so a BILLY 80 is priced against BILLY 80s.
+            FurnitureVariantParser.Variant variant =
+                    FurnitureVariantParser.parse(offer.getName(), details.description());
+
             Instant now = Instant.now();
             offerRepository.save(FurnitureOffer.builder()
                     .feedId(feed.getId())
                     .offerHash(hash)
                     .url(offer.getUrl())
                     .title(StringUtils.abbreviate(offer.getName(), 512))
+                    .description(details.description())
                     .price(details.price())
                     .currency(details.currency())
                     .model(model)
+                    .variant(variant.label())
+                    .primaryDim(variant.primaryDimCm())
+                    .dimSource(variant.isPresent() ? "text" : "none")
                     .part(part)
                     .imageUrl(details.imageUrl())
                     .firstSeen(now)

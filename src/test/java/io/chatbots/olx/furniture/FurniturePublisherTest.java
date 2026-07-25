@@ -63,6 +63,19 @@ class FurniturePublisherTest {
                 .toList();
     }
 
+    private FurnitureOffer offerV(long id, double price, String variant) {
+        FurnitureOffer o = offer(id, price);
+        o.setVariant(variant);
+        return o;
+    }
+
+    private List<FurnitureOffer> compsV(String variant, double price, int n, long startId) {
+        return IntStream.range(0, n)
+                .mapToObj(i -> FurnitureOffer.builder().id(startId + i).feedId(1L).model("MALM")
+                        .variant(variant).price(BigDecimal.valueOf(price)).build())
+                .toList();
+    }
+
     private void wireFeed() {
         when(feedRepository.findByActiveTrue()).thenReturn(List.of(feed()));
         when(feedRepository.findById(1L)).thenReturn(Optional.of(feed()));
@@ -116,6 +129,44 @@ class FurniturePublisherTest {
         publisher(25).publishDue();
 
         verify(telegramClient, never()).execute(any(SendMessage.class));
+    }
+
+    @Test
+    void pricesAgainstVariantGroupNotBlurredModelMedian() throws Exception {
+        wireFeed();
+        // MALM W80 at 300; its own variant sells ~320, so only -6% — not a deal. The bare-model
+        // median is dragged up by big W40 units at 1000, which would falsely make 300 a steal.
+        FurnitureOffer due = offerV(10L, 300, "W80");
+        List<FurnitureOffer> comps = new java.util.ArrayList<>();
+        comps.addAll(compsV("W80", 320, 5, 1000));
+        comps.addAll(compsV("W40", 1000, 8, 2000));
+        when(offerRepository.findDueOffers(eq(1L), any(), any())).thenReturn(List.of(due));
+        when(offerRepository.findByFeedIdAndPartFalseAndPriceIsNotNullAndFirstSeenAfter(eq(1L), any()))
+                .thenReturn(comps);
+
+        publisher(25).publishDue();
+
+        verify(telegramClient, never()).execute(any(SendMessage.class));
+        assertNull(due.getPostedAt());
+    }
+
+    @Test
+    void fallsBackToModelMedianWhenVariantGroupTooSmall() throws Exception {
+        wireFeed();
+        // Only 4 W80 comps (below MIN_SAMPLE) -> fall back to the bare-model median (~650 with the
+        // big W40 units), so 250 reads as a genuine deal and posts.
+        FurnitureOffer due = offerV(10L, 250, "W80");
+        List<FurnitureOffer> comps = new java.util.ArrayList<>();
+        comps.addAll(compsV("W80", 300, 4, 1000));
+        comps.addAll(compsV("W40", 1000, 6, 2000));
+        when(offerRepository.findDueOffers(eq(1L), any(), any())).thenReturn(List.of(due));
+        when(offerRepository.findByFeedIdAndPartFalseAndPriceIsNotNullAndFirstSeenAfter(eq(1L), any()))
+                .thenReturn(comps);
+
+        publisher(25).publishDue();
+
+        verify(telegramClient).execute(any(SendMessage.class));
+        assertNotNull(due.getPostedAt());
     }
 
     @Test
