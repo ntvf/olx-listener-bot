@@ -30,7 +30,9 @@ public class QA extends BaseParser implements Parser {
 
     private static final ZoneId WARSAW = ZoneId.of("Europe/Warsaw");
     private static final ObjectMapper MAPPER = new ObjectMapper();
-    private static final Pattern LISTING_ID = Pattern.compile("ID([0-9A-Za-z]+)\\.html");
+    // Matches the immutable ad id in both OLX (…-CID3-ID1btoKU.html) and Otodom (…-ID4Cay4) URLs,
+    // so a card linking straight to otodom.pl resolves to the same createdTime OLX ships for it.
+    private static final Pattern LISTING_ID = Pattern.compile("-ID([0-9A-Za-z]+)");
 
     static String getSortedByLastCreatedUrl(String url) {
         String desiredSort = "search%5Border%5D=created_at:desc";
@@ -158,9 +160,12 @@ public class QA extends BaseParser implements Parser {
                 String stateJson = MAPPER.readTree(data.substring(literalStart, literalEnd + 1)).asText();
                 JsonNode ads = MAPPER.readTree(stateJson).path("listing").path("listing").path("ads");
                 for (JsonNode ad : ads) {
-                    String listingId = listingId(ad.path("url").asText(null));
                     Instant createdAt = parseInstant(ad.path("createdTime").asText(null));
-                    if (listingId != null && createdAt != null) createdAtByListingId.put(listingId, createdAt);
+                    if (createdAt == null) continue;
+                    // Cross-posted listings render a card linking to externalUrl (otodom.pl), so index
+                    // the createdTime under both ids or the Otodom card's freshness lookup misses.
+                    indexById(createdAtByListingId, ad.path("url").asText(null), createdAt);
+                    indexById(createdAtByListingId, ad.path("externalUrl").asText(null), createdAt);
                 }
             } catch (Exception e) {
                 log.debug("No usable __PRERENDERED_STATE__ ads on list page", e);
@@ -168,6 +173,11 @@ public class QA extends BaseParser implements Parser {
             return createdAtByListingId;
         }
         return createdAtByListingId;
+    }
+
+    private static void indexById(Map<String, Instant> into, String url, Instant createdAt) {
+        String id = listingId(url);
+        if (id != null) into.put(id, createdAt);
     }
 
     static String listingId(String url) {
