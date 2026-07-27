@@ -117,6 +117,8 @@ public class OlxTelegramBot implements LongPollingSingleThreadUpdateConsumer {
     private String scorePrefix;
     @Value("${channel.max-listing-age-hours:48}")
     private long maxListingAgeHours;
+    // chat that last ran /stats; regression alerts are pushed back to it
+    private volatile Long lastStatsChatId;
 
     private static String extractUrl(String text) {
         if (text == null) return null;
@@ -140,7 +142,19 @@ public class OlxTelegramBot implements LongPollingSingleThreadUpdateConsumer {
         // single worker: AI Mode queries are serialized anyway; bounded queue protects Google quota
         scoreExecutor = new ThreadPoolExecutor(1, 1, 0L, TimeUnit.MILLISECONDS,
                 new LinkedBlockingQueue<>(MAX_QUEUED_SCORES));
+        regressionChecker.setRegressionListener(this::alertParsersStopped);
         log.info("Listener executor pool size: {}", listenerThreads);
+    }
+
+    private void alertParsersStopped(Set<String> brokenDomains) {
+        Long chatId = lastStatsChatId;
+        if (chatId == null) return;
+        String text = "⚠️ parser stopped working: " + String.join(", ", brokenDomains);
+        try {
+            telegramClient.execute(SendMessage.builder().chatId(chatId).text(text).build());
+        } catch (TelegramApiException e) {
+            log.warn("Failed to send parser regression alert to chat {}", chatId, e);
+        }
     }
 
     @PreDestroy
@@ -371,6 +385,7 @@ public class OlxTelegramBot implements LongPollingSingleThreadUpdateConsumer {
 
     private HandleResult stats(Update update) {
         if ("/stats".equals(getText(update))) {
+            lastStatsChatId = update.getMessage().getChatId();
             val botStats = botStatsService.getBotStats();
             StringBuilder text = new StringBuilder();
             text.append("all listeners: ").append(botStats.getAllListenersCount()).append("\r\n");
