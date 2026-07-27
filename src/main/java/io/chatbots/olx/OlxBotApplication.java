@@ -6,6 +6,7 @@ import io.chatbots.olx.grabber.OlxGrabber;
 import io.chatbots.olx.grabber.OlxGrabberImpl;
 import io.chatbots.olx.grabber.parser.BA;
 import io.chatbots.olx.grabber.parser.OlxPkParser;
+import io.chatbots.olx.grabber.parser.OtodomParser;
 import io.chatbots.olx.grabber.parser.Parser;
 import io.chatbots.olx.grabber.parser.QA;
 import io.chatbots.olx.grabber.parser.bazaraki.BazarakiParser;
@@ -126,6 +127,7 @@ public class OlxBotApplication {
                 put("olx.kz", new QA());
                 put("olx.com.pk", new OlxPkParser());
                 put("bazaraki.com", new BazarakiParser());
+                put("otodom.pl", new OtodomParser());
             }
         };
     }
