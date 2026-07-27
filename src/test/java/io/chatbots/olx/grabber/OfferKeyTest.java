@@ -56,6 +56,16 @@ class OfferKeyTest {
     }
 
     @Test
+    void otomotoOlxIdKeysOnAdIdAcrossEditedSlugs() {
+        String a = "https://www.otomoto.pl/osobowe/oferta/seat-cordoba-1-4-salon-polska-OLX_ID6IaTcN.html";
+        String b = "https://www.otomoto.pl/osobowe/oferta/seat-cordoba-OLX_ID6IaTcN.html";
+        assertEquals(OfferKey.of(a), OfferKey.of(b));
+        assertEquals("6IaTcN", OfferKey.of(a));
+        // some Otomoto URLs carry the plain -ID form instead of OLX_ID
+        assertEquals("6IaTcb", OfferKey.of("https://www.otomoto.pl/osobowe/oferta/peugeot-407-ID6IaTcb.html"));
+    }
+
+    @Test
     void nonOlxUrlFallsBackToFullUrl() {
         String url = "https://olx.ba/artikal/12345/kawalerka";
         assertEquals(url, OfferKey.of(url));
