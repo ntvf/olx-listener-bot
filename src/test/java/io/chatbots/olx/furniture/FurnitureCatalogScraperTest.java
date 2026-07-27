@@ -70,6 +70,27 @@ class FurnitureCatalogScraperTest {
         verify(crawlRepository).deleteAllInBatch();            // staging cleared on completion
     }
 
+    @Test
+    void variantlessProductYieldsASingleModelLevelRow() {
+        // A product with no parseable variant must not emit both a byKey (model, null) row and a
+        // modelMin (model, null) row — two of those collide on the variant-is-null unique index and
+        // roll back the whole swap, leaving the catalog empty (see VIMUND in prod).
+        when(crawlRepository.findPriced()).thenReturn(List.of(
+                staged("…/vimund-a/", "VIMUND", null, 279),
+                staged("…/vimund-b/", "VIMUND", null, 199)));
+
+        scraper.aggregateAndSwap();
+
+        ArgumentCaptor<List<FurnitureCatalogPrice>> saved = ArgumentCaptor.forClass(List.class);
+        verify(catalogRepository).saveAll(saved.capture());
+        long vimundNullRows = saved.getValue().stream()
+                .filter(r -> "VIMUND".equals(r.getModel()) && r.getVariant() == null)
+                .count();
+        assertEquals(1, vimundNullRows, "exactly one (model, null) row — no unique-constraint collision");
+        assertEquals(0, new BigDecimal("199").compareTo(saved.getValue().stream()
+                .filter(r -> "VIMUND".equals(r.getModel())).findFirst().orElseThrow().getPrice()));
+    }
+
     private FurnitureCatalogCrawl staged(String url, String model, String variant, int price) {
         return FurnitureCatalogCrawl.builder().url(url).model(model).variant(variant)
                 .price(BigDecimal.valueOf(price)).currency("PLN").fetchedAt(Instant.now()).build();

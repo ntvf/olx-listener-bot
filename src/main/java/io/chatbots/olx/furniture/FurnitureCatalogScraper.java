@@ -180,7 +180,8 @@ public class FurnitureCatalogScraper {
         Map<String, FurnitureCatalogPrice> byKey = new LinkedHashMap<>();
         Map<String, FurnitureCatalogPrice> modelMin = new LinkedHashMap<>();
         for (FurnitureCatalogCrawl c : staged) {
-            accumulate(byKey, keyOf(c.getModel(), c.getVariant()), c, c.getVariant());
+            // variant-null goes only to modelMin; a byKey (model, null) row would collide with it on the variant-is-null unique index
+            if (c.getVariant() != null) accumulate(byKey, keyOf(c.getModel(), c.getVariant()), c, c.getVariant());
             accumulate(modelMin, c.getModel(), c, null);
         }
         List<FurnitureCatalogPrice> rows = new ArrayList<>(byKey.values());
