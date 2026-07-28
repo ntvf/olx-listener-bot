@@ -2,6 +2,7 @@ package io.chatbots.olx.config;
 
 import io.chatbots.olx.channel.ChannelFeedPoller;
 import io.chatbots.olx.channel.ChannelPublisher;
+import io.chatbots.olx.checker.RegressionChecker;
 import io.chatbots.olx.furniture.FurnitureCatalogScraper;
 import io.chatbots.olx.furniture.FurnitureFeedPoller;
 import io.chatbots.olx.furniture.FurniturePhotoEnricher;
@@ -30,12 +31,13 @@ class LocalTriggerServerTest {
     private final FurnitureCatalogScraper catalogScraper = mock(FurnitureCatalogScraper.class);
     private final ChannelFeedPoller channelPoller = mock(ChannelFeedPoller.class);
     private final ChannelPublisher channelPublisher = mock(ChannelPublisher.class);
+    private final RegressionChecker regressionChecker = mock(RegressionChecker.class);
 
     private LocalTriggerServer server;
 
     private LocalTriggerServer serverOn(int port) {
         return new LocalTriggerServer(port, furniturePoller, furniturePublisher, photoEnricher,
-                catalogScraper, channelPoller, channelPublisher);
+                catalogScraper, channelPoller, channelPublisher, regressionChecker);
     }
 
     private static int freePort() throws IOException {

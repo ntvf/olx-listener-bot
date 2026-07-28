@@ -3,6 +3,7 @@ package io.chatbots.olx.config;
 import com.sun.net.httpserver.HttpServer;
 import io.chatbots.olx.channel.ChannelFeedPoller;
 import io.chatbots.olx.channel.ChannelPublisher;
+import io.chatbots.olx.checker.RegressionChecker;
 import io.chatbots.olx.furniture.FurnitureCatalogScraper;
 import io.chatbots.olx.furniture.FurnitureFeedPoller;
 import io.chatbots.olx.furniture.FurniturePhotoEnricher;
@@ -43,7 +44,8 @@ public class LocalTriggerServer {
                               FurniturePhotoEnricher furniturePhotoEnricher,
                               FurnitureCatalogScraper furnitureCatalogScraper,
                               ChannelFeedPoller channelPoller,
-                              ChannelPublisher channelPublisher) {
+                              ChannelPublisher channelPublisher,
+                              RegressionChecker regressionChecker) {
         this.port = port;
         actions.put("ikea-poll", furniturePoller::pollAll);
         actions.put("ikea-publish", furniturePublisher::publishDue);
@@ -52,6 +54,7 @@ public class LocalTriggerServer {
         actions.put("ikea-catalog-force", furnitureCatalogScraper::forceRefresh);
         actions.put("rental-poll", channelPoller::pollAll);
         actions.put("rental-publish", channelPublisher::publishDue);
+        actions.put("regression-check", regressionChecker::checkSitesForRegression);
     }
 
     @PostConstruct
