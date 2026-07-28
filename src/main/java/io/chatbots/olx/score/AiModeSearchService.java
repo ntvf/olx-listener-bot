@@ -24,10 +24,11 @@ import java.util.function.Consumer;
  * account" to headless browsers, so on a server this needs a virtual display (Xvfb). See
  * docs/ai-score-setup.md. A persistent profile keeps consent/CAPTCHA cookies between runs.
  * <p>
- * The browser is kept alive between listings and only recycled once it has been idle for
- * {@code ai.score.session-idle-minutes}: launching Chromium costs seconds per listing, and a
- * fingerprint that churns on every query draws more CAPTCHAs than a stable one. Each listing still
- * gets its own page, i.e. its own AI Mode conversation — AI Mode remembers previous turns, so
+ * The browser is kept alive between listings and, when {@code ai.score.session-idle-minutes} is
+ * positive, recycled once it has been idle that long; at {@code 0} (the default) it is never
+ * recycled. Launching Chromium costs seconds per listing, and a cold relaunch re-triggers Google's
+ * CAPTCHA, so a stable, warmed profile draws far fewer challenges than one that churns. Each listing
+ * still gets its own page, i.e. its own AI Mode conversation — AI Mode remembers previous turns, so
  * reusing one conversation would let the previous listing bleed into the next one's answer.
  * <p>
  * When Google asks for a CAPTCHA the {@code captchaNotifier} is invoked (the bot posts the noVNC
@@ -52,7 +53,7 @@ public class AiModeSearchService {
     private int answerTimeoutSeconds;
     @Value("${ai.score.captcha-wait-seconds:240}")
     private int captchaWaitSeconds;
-    @Value("${ai.score.session-idle-minutes:20}")
+    @Value("${ai.score.session-idle-minutes:0}")
     private int sessionIdleMinutes;
 
     private Playwright playwright;
@@ -117,7 +118,10 @@ public class AiModeSearchService {
     }
 
     private boolean isSessionStale() {
-        if (sessionIdleMinutes <= 0) return true;
+        // <= 0 keeps the warmed, CAPTCHA-cleared browser alive indefinitely: relaunching a cold
+        // Chromium is what draws a fresh CAPTCHA, so recycling on idle manufactures the challenges
+        // it is meant to avoid.
+        if (sessionIdleMinutes <= 0) return false;
         return System.currentTimeMillis() - lastUsedAt > Duration.ofMinutes(sessionIdleMinutes).toMillis();
     }
 
