@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.chatbots.olx.checker.RegressionChecker;
 import io.chatbots.olx.grabber.OlxGrabber;
 import io.chatbots.olx.grabber.OlxGrabberImpl;
+import io.chatbots.olx.grabber.browser.CloudflareBrowserFetcher;
 import io.chatbots.olx.grabber.parser.BA;
 import io.chatbots.olx.grabber.parser.OlxPkParser;
 import io.chatbots.olx.grabber.parser.OtodomParser;
@@ -114,7 +115,12 @@ public class OlxBotApplication {
     }
 
     @Bean
-    public Map<String, Parser> parsers() {
+    public CloudflareBrowserFetcher cloudflareBrowserFetcher() {
+        return new CloudflareBrowserFetcher();
+    }
+
+    @Bean
+    public Map<String, Parser> parsers(CloudflareBrowserFetcher cloudflareBrowserFetcher) {
         return new HashMap<String, Parser>() {
             {
                 put("olx.ua", new QA());
@@ -127,7 +133,7 @@ public class OlxBotApplication {
                 put("olx.uz", new QA());
                 put("olx.kz", new QA());
                 put("olx.com.pk", new OlxPkParser());
-                put("bazaraki.com", new BazarakiParser());
+                put("bazaraki.com", new BazarakiParser(cloudflareBrowserFetcher));
                 put("otodom.pl", new OtodomParser());
                 put("otomoto.pl", new OtomotoParser());
             }

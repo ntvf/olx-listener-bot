@@ -44,7 +44,7 @@ class RegressionCheckerTest {
         checker.checkSitesForRegression();
         assertThat(alerted.get()).isNull();
 
-        String bazarakiUrl = "https://www.bazaraki.com/adv/phones-and-accessories--mobile-phones-and-smartphones/?ordering=newest";
+        String bazarakiUrl = "https://www.bazaraki.com/telephones/mobile-phones/?ordering=newest";
         when(grabber.getOffers(bazarakiUrl)).thenReturn(Collections.emptyList());
         checker.checkSitesForRegression();
 

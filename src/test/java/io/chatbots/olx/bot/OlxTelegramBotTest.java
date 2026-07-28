@@ -16,6 +16,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @Tag("integration")
 class OlxGrabberImplTest {
@@ -32,7 +33,7 @@ class OlxGrabberImplTest {
             put("olx.uz", new QA());
             put("olx.kz", new QA());
             put("olx.com.pk", new OlxPkParser());
-            put("bazaraki.com", new BazarakiParser());
+            put("bazaraki.com", new BazarakiParser(null));
         }
     };
 
@@ -91,10 +92,10 @@ class OlxGrabberImplTest {
 
     @Test
     void bazaraki() {
-        String olxUrl = "https://www.bazaraki.com/adv/phones-and-accessories--mobile-phones-and-smartphones/?ordering=newest";
-        List<Offer> ads = grabber.getOffers(olxUrl);
-        Assumptions.assumeFalse(ads.isEmpty(), "bazaraki.com is not reachable from this network (bot protection active)");
-        assertFalse(ads.isEmpty());
+        // Bazaraki sits behind Cloudflare and is fetched through a real browser wired by Spring, which
+        // this bare parser map has no way to provide; parsing is covered by BazarakiParserTest against a
+        // saved page. Here we only assert the URL still routes to the bazaraki parser.
+        assertTrue(grabber.supportsUrl("https://www.bazaraki.com/telephones/mobile-phones/?ordering=newest"));
     }
 
     @Test

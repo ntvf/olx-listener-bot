@@ -29,8 +29,8 @@ public class RegressionChecker {
             "https://www.olx.uz/list/q-iphone/",
             "https://www.olx.kz/list/q-iphone/",
             "https://www.olx.com.pk/items/q-iphone",
-            "https://www.bazaraki.com/adv/phones-and-accessories--mobile-phones-and-smartphones/?ordering=newest",
-            "https://www.otodom.pl/pl/wyniki/wynajem/mieszkanie/warszawa?by=LATEST&direction=DESC",
+            "https://www.bazaraki.com/telephones/mobile-phones/?ordering=newest",
+            "https://www.otodom.pl/pl/wyniki/wynajem/mieszkanie/mazowieckie/warszawa/warszawa/warszawa?by=LATEST&direction=DESC",
             "https://www.otomoto.pl/osobowe?search%5Border%5D=created_at_first%3Adesc");
     private final Map<String, Boolean> lastResults = new ConcurrentHashMap<>();
     private volatile Consumer<Set<String>> regressionListener = domains -> {};
