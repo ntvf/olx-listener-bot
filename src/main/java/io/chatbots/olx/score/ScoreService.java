@@ -6,6 +6,7 @@ import org.springframework.beans.factory.annotation.Value;
 
 import java.net.URI;
 import java.util.Locale;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Consumer;
 
 /**
@@ -24,6 +25,23 @@ public class ScoreService {
     private static final int MAX_ANSWER_CHARS = 3500;
     /** below this, the answer is a guess dressed up as data rather than a price signal */
     private static final int MIN_COMPARABLES = 3;
+
+    // Interchangeable phrasings for the two most-repeated sentences of the query. Rotating them
+    // stops every score from hitting Google AI Mode with a byte-identical prompt, which is an easy
+    // automation fingerprint to flag. The RANGE/COMPS/NOTE format block below is fixed on purpose:
+    // MarketPriceParser keys off those exact labels.
+    private static final String[] LISTING_PREAMBLES = {
+            "Second-hand listing on ",
+            "Used item for sale on ",
+            "Pre-owned listing on ",
+            "Classified ad for a used item on ",
+    };
+    private static final String[] PRICE_QUESTIONS = {
+            " What do comparable used units of this exact item currently sell for on ",
+            " What is the going second-hand price for this exact item on ",
+            " How much do similar used units of this item typically sell for on ",
+            " What are used units of this exact item currently going for on ",
+    };
 
     private final ListingScraper listingScraper;
     private final AiModeSearchService aiModeSearchService;
@@ -80,12 +98,13 @@ public class ScoreService {
     /**
      * Grounds the query on the marketplace the ad lives on (the model cannot infer it — the scraped
      * location is often null) while answering in the user's own language. The asking price is left
-     * out on purpose: including it anchors the estimate.
+     * out on purpose: including it anchors the estimate. The recurring phrasings are rotated so
+     * successive scores are not byte-identical prompts Google can fingerprint as automation.
      */
     private String buildQuery(ListingInfo listing, Locale locale) {
         String market = marketOf(listing.getUrl());
         StringBuilder query = new StringBuilder();
-        query.append("Second-hand listing on ").append(market);
+        query.append(randomOf(LISTING_PREAMBLES)).append(market);
         if (listing.getLocation() != null) {
             query.append(" in ").append(listing.getLocation());
         }
@@ -94,7 +113,7 @@ public class ScoreService {
             query.append(". Condition details: ")
                     .append(StringUtils.abbreviate(listing.getDescription(), MAX_DESCRIPTION_CHARS));
         }
-        query.append(". What do comparable used units of this exact item currently sell for on ")
+        query.append(".").append(randomOf(PRICE_QUESTIONS))
                 .append(market).append(" and other second-hand markets in the same region?")
                 .append(" Answer in ").append(locale.getDisplayLanguage(Locale.ENGLISH))
                 .append(" with exactly these three lines and nothing else:")
@@ -104,6 +123,10 @@ public class ScoreService {
                 .append(" If you found fewer than ").append(MIN_COMPARABLES)
                 .append(" comparable listings, reply \"COMPS: 0\" and omit RANGE rather than estimating.");
         return query.toString();
+    }
+
+    private String randomOf(String[] variants) {
+        return variants[ThreadLocalRandom.current().nextInt(variants.length)];
     }
 
     /** e.g. "https://www.olx.pl/d/oferta/..." -> "olx.pl" */

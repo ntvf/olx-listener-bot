@@ -53,6 +53,8 @@ public class AiModeSearchService {
     private int answerTimeoutSeconds;
     @Value("${ai.score.captcha-wait-seconds:240}")
     private int captchaWaitSeconds;
+    @Value("${ai.score.captcha-retries:1}")
+    private int captchaRetries;
     @Value("${ai.score.session-idle-minutes:0}")
     private int sessionIdleMinutes;
 
@@ -153,14 +155,24 @@ public class AiModeSearchService {
         }
     }
 
+    /**
+     * Notifies the chat and waits for a human to clear the challenge, re-prompting up to
+     * {@code ai.score.captcha-retries} extra times if a window lapses unsolved. It deliberately does
+     * not wait forever: once these attempts are spent it gives up on this listing, and the next
+     * listing queued for scoring hits {@code /sorry/} and raises a fresh CAPTCHA of its own.
+     */
     private void waitOutCaptcha(Page page, Consumer<CaptchaEvent> captchaNotifier) {
         if (!page.url().contains("/sorry/")) return;
-        log.warn("Google CAPTCHA page shown, notifying chat and waiting up to {}s", captchaWaitSeconds);
-        captchaNotifier.accept(CaptchaEvent.builder().waitSeconds(captchaWaitSeconds).build());
-        if (!waitForUrl(page, u -> !u.contains("/sorry/"), captchaWaitSeconds)) {
-            throw new IllegalStateException("CAPTCHA was not solved in time, giving up.");
+        for (int attempt = 0; attempt <= captchaRetries; attempt++) {
+            log.warn("Google CAPTCHA page shown, notifying chat and waiting up to {}s (attempt {}/{})",
+                    captchaWaitSeconds, attempt + 1, captchaRetries + 1);
+            captchaNotifier.accept(CaptchaEvent.builder().waitSeconds(captchaWaitSeconds).build());
+            if (waitForUrl(page, u -> !u.contains("/sorry/"), captchaWaitSeconds)) {
+                page.waitForLoadState();
+                return;
+            }
         }
-        page.waitForLoadState();
+        throw new IllegalStateException("CAPTCHA was not solved in time, giving up.");
     }
 
     private boolean waitForUrl(Page page, java.util.function.Predicate<String> ok, int timeoutSeconds) {
