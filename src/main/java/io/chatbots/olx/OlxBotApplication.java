@@ -198,8 +198,12 @@ public class OlxBotApplication {
     }
 
     @Bean
-    public RegressionChecker checker(OlxGrabber grabber) {
-        return new RegressionChecker(grabber);
+    public RegressionChecker checker(
+            OlxGrabber grabber,
+            @Value("${checker.per-url-timeout-seconds:90}")
+            long perUrlTimeoutSeconds
+    ) {
+        return new RegressionChecker(grabber, Duration.ofSeconds(perUrlTimeoutSeconds));
     }
 
 }
