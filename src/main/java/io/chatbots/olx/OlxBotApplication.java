@@ -39,6 +39,7 @@ import org.telegram.telegrambots.meta.api.objects.ApiResponse;
 import org.telegram.telegrambots.meta.api.objects.Update;
 import org.telegram.telegrambots.meta.generics.TelegramClient;
 
+import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -50,6 +51,8 @@ import java.util.concurrent.TimeUnit;
         ApiResponse.class, Update.class
 })
 public class OlxBotApplication {
+
+    private static final int TELEGRAM_MAX_REQUESTS_PER_HOST = 64;
 
     public static void main(String[] args) {
         SpringApplication.run(OlxBotApplication.class, args);
@@ -101,12 +104,32 @@ public class OlxBotApplication {
         };
     }
 
+    /**
+     * The client is built with an explicit callTimeout because the blocking {@code execute(...)} is
+     * an unbounded {@code executeAsync(...).get()}: without a whole-call deadline a send whose OkHttp
+     * callback never fires parks the calling thread forever. That once froze the scheduler — and with
+     * it every feed poll and channel post — until the process was restarted.
+     * <p>
+     * The per-host cap is raised above OkHttp's default of 5 for the same reason: every call goes to
+     * api.telegram.org, and a queued call's timeouts do not start until it is dispatched, so a handful
+     * of slow sends could stall the rest behind them indefinitely.
+     */
     @Bean
     public TelegramClient telegramClient(
             @Value("${bot.token}")
             String botToken
     ) {
-        return new OkHttpTelegramClient(botToken);
+        Dispatcher dispatcher = new Dispatcher();
+        dispatcher.setMaxRequestsPerHost(TELEGRAM_MAX_REQUESTS_PER_HOST);
+        OkHttpClient http = new OkHttpClient.Builder()
+                .dispatcher(dispatcher)
+                .connectTimeout(Duration.ofSeconds(15))
+                .readTimeout(Duration.ofSeconds(60))
+                .writeTimeout(Duration.ofSeconds(60))
+                .callTimeout(Duration.ofSeconds(120))
+                .retryOnConnectionFailure(true)
+                .build();
+        return new OkHttpTelegramClient(http, botToken);
     }
 
     @Bean
