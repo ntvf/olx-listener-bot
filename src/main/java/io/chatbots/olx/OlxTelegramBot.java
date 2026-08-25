@@ -1,6 +1,7 @@
 package io.chatbots.olx;
 
 import io.chatbots.olx.channel.ChannelAdminService;
+import io.chatbots.olx.channel.ListingEnricher;
 import io.chatbots.olx.checker.RegressionChecker;
 import io.chatbots.olx.grabber.Offer;
 import io.chatbots.olx.grabber.OfferKey;
@@ -93,6 +94,8 @@ public class OlxTelegramBot implements LongPollingSingleThreadUpdateConsumer {
     private BotStatsService botStatsService;
     @Autowired
     private RegressionChecker regressionChecker;
+    @Autowired
+    private ListingEnricher listingEnricher;
     @Autowired
     private OlxGrabber olxGrabber;
     @Autowired
@@ -405,6 +408,7 @@ public class OlxTelegramBot implements LongPollingSingleThreadUpdateConsumer {
                     text.append(status).append(" ").append(url).append("\r\n");
                 });
             }
+            text.append("\r\n").append(listingEnricher.phoneFetchStats()).append("\r\n");
             return HandleResult.builder().botApiMethod(
                     SendMessage.builder()
                             .chatId(update.getMessage().getChatId())

@@ -28,6 +28,10 @@ public interface FeedOfferRepository extends JpaRepository<FeedOffer, Long> {
             + "WHERE o.feedId = f.id AND f.channelChatId = :chatId")
     Instant findMaxPostedAtByChannelChatId(@Param("chatId") long chatId);
 
+    /** Newest listing across all feeds — the freshness clock the ingestion watchdog reads. */
+    @Query("SELECT MAX(o.firstSeen) FROM FeedOffer o")
+    Instant findMaxFirstSeen();
+
     /**
      * True when a listing with the same content fingerprint (price, area, rooms, location, title)
      * was already posted to this feed within the window. Catches the same flat re-listed under fresh

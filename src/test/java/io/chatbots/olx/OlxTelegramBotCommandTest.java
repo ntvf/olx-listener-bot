@@ -1,5 +1,6 @@
 package io.chatbots.olx;
 
+import io.chatbots.olx.channel.ListingEnricher;
 import io.chatbots.olx.checker.RegressionChecker;
 import io.chatbots.olx.grabber.Offer;
 import io.chatbots.olx.grabber.OlxGrabber;
@@ -65,6 +66,8 @@ class OlxTelegramBotCommandTest {
     private BotStatsService botStatsService;
     @Mock
     private RegressionChecker regressionChecker;
+    @Mock
+    private ListingEnricher listingEnricher;
     @Mock
     private OlxGrabber olxGrabber;
     @Mock
@@ -495,6 +498,7 @@ class OlxTelegramBotCommandTest {
                 .build();
         when(botStatsService.getBotStats()).thenReturn(stats);
         when(regressionChecker.getLastResults()).thenReturn(Collections.emptyMap());
+        when(listingEnricher.phoneFetchStats()).thenReturn("phones: no attempts yet");
         Update update = privateUpdate("/stats");
 
         bot.consume(update);

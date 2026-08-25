@@ -3,6 +3,7 @@ package io.chatbots.olx.config;
 import io.chatbots.olx.OlxTelegramBot;
 import io.chatbots.olx.channel.ChannelFeedPoller;
 import io.chatbots.olx.channel.ChannelPublisher;
+import io.chatbots.olx.channel.IngestionWatchdog;
 import io.chatbots.olx.checker.RegressionChecker;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
@@ -24,6 +25,7 @@ public class SchedulerConfig implements SchedulingConfigurer {
     private final RegressionChecker regressionChecker;
     private final ChannelFeedPoller channelFeedPoller;
     private final ChannelPublisher channelPublisher;
+    private final IngestionWatchdog ingestionWatchdog;
 
     /** Feed scrape spacing is randomized within this range so OLX sees no fixed-cadence bursts. */
     @Value("${channel.poll-min-seconds:300}")
@@ -44,6 +46,11 @@ public class SchedulerConfig implements SchedulingConfigurer {
     @Scheduled(fixedDelayString = "${channel.publish-interval-ms:300000}")
     public void scheduleChannelPublish() {
         channelPublisher.publishDue();
+    }
+
+    @Scheduled(fixedDelayString = "${channel.freshness-check-interval-ms:1800000}")
+    public void scheduleFreshnessCheck() {
+        ingestionWatchdog.checkFreshness();
     }
 
     /**

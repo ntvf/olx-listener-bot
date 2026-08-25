@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.Builder;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
+import org.jsoup.Connection;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
@@ -13,6 +14,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.util.Locale;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -56,6 +58,10 @@ public class ListingEnricher {
 
     /** When true, OLX-native listings also get their phone via the limited-phones API. */
     private final boolean harvestPhones;
+    private final AtomicLong phoneFetchOk = new AtomicLong();
+    private final AtomicLong phoneFetchRejected = new AtomicLong();
+    private final AtomicLong phoneFetchEmpty = new AtomicLong();
+    private final AtomicLong phoneFetchFailed = new AtomicLong();
 
     public ListingEnricher() {
         this(true);
@@ -161,24 +167,50 @@ public class ListingEnricher {
         return -1;
     }
 
+    /**
+     * Failures here used to log at debug only, which hid a real degradation: OLX listings that
+     * advertise a phone were resolving it far less often than Otodom's, and nothing surfaced it.
+     * The outcome counters are reported by {@code /stats} so the success rate stays observable.
+     */
     private String fetchOlxPhone(String listingUrl, String offerId) {
         try {
             java.net.URI u = java.net.URI.create(listingUrl);
             String api = u.getScheme() + "://" + u.getHost() + "/api/v1/offers/" + offerId + "/limited-phones/";
-            String body = Jsoup.connect(api)
+            Connection.Response response = Jsoup.connect(api)
                     .userAgent(USER_AGENT)
                     .header("Accept", "application/json")
                     .ignoreContentType(true)
+                    .ignoreHttpErrors(true)
                     .timeout(15_000)
-                    .execute().body();
-            JsonNode phones = objectMapper.readTree(body).path("data").path("phones");
+                    .execute();
+            if (response.statusCode() != 200) {
+                phoneFetchRejected.incrementAndGet();
+                log.warn("OLX phone endpoint returned {} for offer {}", response.statusCode(), offerId);
+                return null;
+            }
+            JsonNode phones = objectMapper.readTree(response.body()).path("data").path("phones");
             if (phones.isArray() && !phones.isEmpty()) {
+                phoneFetchOk.incrementAndGet();
                 return StringUtils.trimToNull(phones.get(0).asText(null));
             }
+            phoneFetchEmpty.incrementAndGet();
         } catch (Exception e) {
-            log.debug("No phone for OLX offer {}: {}", offerId, e.toString());
+            phoneFetchFailed.incrementAndGet();
+            log.warn("OLX phone fetch failed for offer {}: {}", offerId, e.toString());
         }
         return null;
+    }
+
+    /** Outcome tallies for the OLX phone endpoint, surfaced via {@code /stats}. */
+    public String phoneFetchStats() {
+        long ok = phoneFetchOk.get();
+        long rejected = phoneFetchRejected.get();
+        long empty = phoneFetchEmpty.get();
+        long failed = phoneFetchFailed.get();
+        long attempts = ok + rejected + empty + failed;
+        if (attempts == 0) return "phones: no attempts yet";
+        return String.format("phones: %d/%d ok (%d%%) · %d rejected · %d empty · %d failed",
+                ok, attempts, 100 * ok / attempts, rejected, empty, failed);
     }
 
     /**
