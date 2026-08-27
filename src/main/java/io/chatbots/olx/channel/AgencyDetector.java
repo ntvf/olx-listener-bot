@@ -2,8 +2,12 @@ package io.chatbots.olx.channel;
 
 import java.text.Normalizer;
 import java.time.Duration;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Classifies a rental listing as owner-posted or agency-posted. All keyword lists and
@@ -81,6 +85,30 @@ public final class AgencyDetector {
             "агентств", "агенці", "агенц", "ріелтор", "риэлтор", "риелтор", "комиссия агент"
     ));
 
+    /**
+     * "bezpośrednio" is also the ordinary Polish adverb for distance — "parking bezpośrednio pod
+     * blokiem", "bezpośrednio przy metrze" describe the flat's surroundings, not who is renting it
+     * out. Agency ads use it as freely as owners do, so these spatial uses are blanked before the
+     * bare "bezposrednio" stem is matched, and only the standalone adverb survives as an owner
+     * signal. "bezposrednio od wlascicie" is deliberately absent: that one really is owner-direct.
+     */
+    private static final List<String> SPATIAL_ADVERB_STEMS = fold(List.of(
+            "bezposrednio przy", "bezposrednio pod", "bezposrednio obok", "bezposrednio nad",
+            "bezposrednio przed", "bezposrednio do", "bezposrednio z ", "bezposrednio ze ",
+            "bezposrednio w "
+    ));
+
+    /**
+     * Polish mobile/landline shapes: nine digits, optionally grouped 3-3-3 and optionally prefixed
+     * +48. The look-around keeps longer digit runs (and price/kaucja arithmetic that happens to add
+     * up to nine digits) from being read as a number.
+     */
+    private static final Pattern PHONE = Pattern.compile(
+            "(?<!\\d)(?:\\+?48[ -]?)?(?:\\d{3}[ -]?\\d{3}[ -]?\\d{3}|\\d{9})(?!\\d)");
+
+    /** Two or more distinct numbers in one small ad reads as an office line plus an agent mobile. */
+    private static final int MAX_PRIVATE_PHONES = 1;
+
     /** More distinct listings than this over the last 30 days is an agency, text aside. */
     private static final int MAX_PRIVATE_LISTINGS_30D = 3;
 
@@ -144,10 +172,10 @@ public final class AgencyDetector {
         if (activity.listingsLast7Days() > MAX_PRIVATE_LISTINGS_7D) return Verdict.AGENCY;
         if (activity.listingsLast90Days() > MAX_PRIVATE_LISTINGS_90D) return Verdict.AGENCY;
 
-        String text = fold(String.join(" ",
+        String text = withoutSpatialAdverbs(fold(String.join(" ",
                 title == null ? "" : title,
                 description == null ? "" : description,
-                advertiserName == null ? "" : advertiserName));
+                advertiserName == null ? "" : advertiserName)));
         // Presence of an owner phrase is a positive publish signal; capture it before the same
         // stems are stripped so they cannot trip the agency stems ("bez prowizji" vs "prowizj").
         boolean ownerSignal = OWNER_STEMS.stream().anyMatch(text::contains);
@@ -163,6 +191,7 @@ public final class AgencyDetector {
         for (String stem : WEAK_AGENCY_STEMS) {
             if (text.contains(stem)) weakHits++;
         }
+        if (distinctPhones(text) > MAX_PRIVATE_PHONES) weakHits++;
         if (weakHits >= 2) return Verdict.AGENCY;
         // A lone soft tell alongside an explicit owner phrase reads as owner, not agency: an owner
         // writing "prowizja 0%", or naming agencies only to disavow them, should not be held back
@@ -195,11 +224,31 @@ public final class AgencyDetector {
      * held back rather than a commission-waiving operator being let through.
      */
     public static boolean isDirect(String title, String description, String advertiserName) {
-        String text = fold(String.join(" ",
+        String text = withoutSpatialAdverbs(fold(String.join(" ",
                 title == null ? "" : title,
                 description == null ? "" : description,
-                advertiserName == null ? "" : advertiserName));
+                advertiserName == null ? "" : advertiserName)));
         return DIRECT_STEMS.stream().anyMatch(text::contains);
+    }
+
+    /** Blanks the spatial "bezpośrednio przy/pod/…" uses so only the standalone adverb is left. */
+    private static String withoutSpatialAdverbs(String folded) {
+        String text = folded;
+        for (String stem : SPATIAL_ADVERB_STEMS) {
+            text = text.replace(stem, " ");
+        }
+        return text;
+    }
+
+    /** Distinct phone numbers in the listing, compared on digits only so formatting cannot double-count. */
+    static int distinctPhones(String folded) {
+        Set<String> numbers = new LinkedHashSet<>();
+        Matcher m = PHONE.matcher(folded);
+        while (m.find()) {
+            String digits = m.group().replaceAll("\\D", "");
+            numbers.add(digits.substring(digits.length() - 9));
+        }
+        return numbers.size();
     }
 
     static String fold(String s) {

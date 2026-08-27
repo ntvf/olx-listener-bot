@@ -282,4 +282,74 @@ class AgencyDetectorTest {
     void directIgnoresDiacriticsAndCase() {
         assertTrue(AgencyDetector.isDirect("BEZPOSREDNIO kawalerka", null, null));
     }
+
+    // --- "bezpośrednio" as a distance adverb, not an owner claim ---------------------
+
+    @Test
+    void bezposrednioPodBlokiemIsNotDirect() {
+        // real miss: an agency ad whose only "bezpośrednio" describes where the parking is
+        assertFalse(AgencyDetector.isDirect("Wynajmę mieszkanie na Bemowie",
+                "Przytulne 2 pokoje, parking bezpośrednio pod blokiem", null));
+    }
+
+    @Test
+    void bezposrednioPrzyMetrzeIsNotDirect() {
+        assertFalse(AgencyDetector.isDirect("Mieszkanie Wola",
+                "Lokalizacja bezpośrednio przy metrze M2", null));
+    }
+
+    @Test
+    void spatialBezposrednioDoesNotPublishAsOwner() {
+        assertEquals(Verdict.LIKELY_AGENCY,
+                AgencyDetector.classify("Wynajmę mieszkanie na Bemowie",
+                        "Parking bezpośrednio pod blokiem, wejście bezpośrednio z ulicy",
+                        false, SellerActivity.NONE));
+    }
+
+    @Test
+    void bezposrednioOdWlascicielaSurvivesSpatialStripping() {
+        assertTrue(AgencyDetector.isDirect("Mieszkanie Bemowo",
+                "Wynajmę bezpośrednio od właściciela, parking bezpośrednio pod blokiem", null));
+        assertEquals(Verdict.OWNER,
+                AgencyDetector.classify("Mieszkanie Bemowo",
+                        "Wynajmę bezpośrednio od właściciela, parking bezpośrednio pod blokiem",
+                        false, SellerActivity.NONE));
+    }
+
+    @Test
+    void standaloneBezposrednioStillReadsAsOwner() {
+        assertTrue(AgencyDetector.isDirect("Kawalerka Bemowo", "Wynajmę bezpośrednio, od zaraz", null));
+    }
+
+    // --- multiple contact numbers ---------------------------------------------------
+
+    @Test
+    void twoPhoneNumbersAreAWeakAgencySignal() {
+        // office line + agent mobile on one small flat — an owner lists one number
+        assertEquals(Verdict.LIKELY_AGENCY,
+                AgencyDetector.classify("Mieszkanie 2 pokoje", "Kontakt 600 123 456 lub 601 987 654",
+                        false, tenured(6, 1)));
+    }
+
+    @Test
+    void oneRepeatedPhoneNumberIsNotDoubleCounted() {
+        assertEquals(Verdict.OWNER,
+                AgencyDetector.classify("Mieszkanie 2 pokoje", "Kontakt 600 123 456, sms +48 600-123-456",
+                        false, tenured(6, 1)));
+    }
+
+    @Test
+    void pricesAreNotMistakenForPhoneNumbers() {
+        assertEquals(Verdict.OWNER,
+                AgencyDetector.classify("Mieszkanie 2 pokoje",
+                        "Czynsz 2500 zł, kaucja 2500 zł, media 500 zł, 42 m2, 2026 rok",
+                        false, tenured(6, 1)));
+    }
+
+    @Test
+    void twoPhoneNumbersPlusCommissionEscalatesToAgency() {
+        assertEquals(Verdict.AGENCY,
+                AgencyDetector.classify("Mieszkanie 2 pokoje",
+                        "Prowizja 50%. Kontakt 600 123 456 lub 601 987 654", false, SellerActivity.NONE));
+    }
 }
